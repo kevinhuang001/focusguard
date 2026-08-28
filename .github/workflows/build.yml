@@ -54,18 +54,20 @@ jobs:
         run: |
           mkdir -p src-tauri/resources/piper
           if [ "$RUNNER_OS" = "Windows" ]; then
-            curl -sL -o piper.zip https://github.com/rhasspy/piper/releases/latest/download/piper_windows_amd64.zip
+            curl -fsSL -o piper.zip https://github.com/rhasspy/piper/releases/latest/download/piper_windows_amd64.zip
             powershell -Command "Expand-Archive -Force piper.zip piper_win"
+            find piper_win -name "piper.exe" -exec cp {} src-tauri/resources/piper/piper.exe \;
             rm -f src-tauri/resources/piper/piper
-            cp piper_win/piper.exe src-tauri/resources/piper/piper.exe
           elif [ "$RUNNER_OS" = "macOS" ]; then
-            curl -sL -o piper.tar.gz https://github.com/rhasspy/piper/releases/latest/download/piper_macos_aarch64.tar.gz
+            if [ "$(uname -m)" = "arm64" ]; then A=piper_macos_aarch64.tar.gz; else A=piper_macos_x64.tar.gz; fi
+            curl -fsSL -o piper.tar.gz https://github.com/rhasspy/piper/releases/latest/download/$A
             tar xzf piper.tar.gz
-            cp piper/piper src-tauri/resources/piper/piper
+            find . -path "*/piper" -type f -exec cp {} src-tauri/resources/piper/piper \;
+            chmod +x src-tauri/resources/piper/piper
           else
-            curl -sL -o piper.tar.gz https://github.com/rhasspy/piper/releases/latest/download/piper_linux_x86_64.tar.gz
+            curl -fsSL -o piper.tar.gz https://github.com/rhasspy/piper/releases/latest/download/piper_linux_x86_64.tar.gz
             tar xzf piper.tar.gz
-            cp piper/piper src-tauri/resources/piper/piper
+            find . -path "*/piper" -type f -exec cp {} src-tauri/resources/piper/piper \;
             chmod +x src-tauri/resources/piper/piper
           fi
 
