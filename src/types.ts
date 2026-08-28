@@ -14,15 +14,21 @@ export interface ReminderConfig {
   missThreshold: number;
 }
 
+export interface ModelConfig {
+  apiUrl: string;
+  apiKey: string;
+  model: string;
+}
+
 export interface Config {
   screen: SourceConfig;
   camera: SourceConfig;
-  backend: "ollama" | "mock";
-  model: string;
+  modelApi: ModelConfig;
+  demoMode: boolean;
   intervalSecs: number;
   imageMaxWidth: number;
-  ollamaUrl: string;
   reminder: ReminderConfig;
+  configured: boolean;
 }
 
 export interface GpuInfo {
@@ -38,17 +44,10 @@ export interface RecommendResult {
   note: string;
 }
 
-export interface OllamaModel {
-  name: string;
-  size: number;
-  digest: string;
-  modifiedAt: string;
-}
-
-export interface OllamaInfo {
-  installed: boolean;
-  running: boolean;
-  models: OllamaModel[];
+export interface ConnectionTest {
+  ok: boolean;
+  message: string;
+  models: string[];
 }
 
 export interface DetectionResult {
@@ -83,9 +82,4 @@ export interface ReminderEvent {
   kind: ReminderKind;
   title: string;
   text: string;
-}
-
-export interface PullEvent {
-  model: string;
-  line: string;
 }

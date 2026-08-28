@@ -2,12 +2,11 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import type {
   Config,
+  ConnectionTest,
   DetectionResult,
   GpuInfo,
   MonitorSnapshot,
   MonitorTick,
-  OllamaInfo,
-  PullEvent,
   RecommendResult,
   ReminderEvent,
 } from "./types";
@@ -17,9 +16,8 @@ export const api = {
   saveConfig: (cfg: Config) => invoke<void>("save_config", { cfg }),
   getGpuInfo: () => invoke<GpuInfo>("get_gpu_info"),
   getRecommendation: () => invoke<RecommendResult>("get_recommendation"),
-  ollamaInfo: (cfgUrl: string) => invoke<OllamaInfo>("ollama_info", { cfgUrl }),
-  startOllama: () => invoke<void>("start_ollama"),
-  pullModel: (model: string) => invoke<void>("pull_model", { model }),
+  testConnection: (apiUrl: string, apiKey: string) =>
+    invoke<ConnectionTest>("test_connection", { apiUrl, apiKey }),
   detectOnce: (source: string) => invoke<DetectionResult>("detect_once", { source }),
   startMonitoring: (cfg: Config) => invoke<void>("start_monitoring", { cfg }),
   stopMonitoring: () => invoke<void>("stop_monitoring"),
@@ -37,6 +35,4 @@ export const events = {
     listen<{ running: boolean }>("monitor://state", (e) => cb(e.payload)),
   onReminder: (cb: (r: ReminderEvent) => void) =>
     listen<ReminderEvent>("monitor://reminder", (e) => cb(e.payload)),
-  onPull: (cb: (p: PullEvent) => void) =>
-    listen<PullEvent>("ollama://pull", (e) => cb(e.payload)),
 };

@@ -14,27 +14,73 @@ pub struct DetectionResult {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct OllamaModel {
-    pub name: String,
-    pub size: u64,
-    pub digest: String,
-    pub modified_at: String,
+pub struct ModelInfo {
+    pub id: String,
 }
 
-/// Ollama 本地推理客户端（默认 http://127.0.0.1:11434）。
-/// 所有截图/摄像头帧都只发送到本机 Ollama，绝不上传云端。
+/// OpenAI 兼容的视觉模型客户端。
+/// 只需一个 base_url（如 https://api.openai.com/v1 或 http://localhost:11434/v1），
+/// 通过 `/chat/completions` 多模态接口调用。应用不代理模型的下载/安装。
 #[derive(Debug, Clone)]
-pub struct OllamaClient {
-    pub url: String,
+pub struct OpenAiClient {
+    pub base_url: String,
+    pub api_key: String,
 }
 
-impl OllamaClient {
-    pub fn new(url: String) -> Self {
+impl OpenAiClient {
+    pub fn new(base_url: String, api_key: String) -> Self {
         Self {
-            url: url.trim_end_matches('/').to_string(),
+            base_url: base_url.trim_end_matches('/').to_string(),
+            api_key,
         }
     }
 
+    async fn client(&self, timeout: Duration) -> Result<reqwest::Client, String> {
+        reqwest::Client::builder()
+            .timeout(timeout)
+            .build()
+            .map_err(|e| format!("HTTP 客户端初始化失败: {e}"))
+    }
+
+    async fn send(
+        &self,
+        req: reqwest::RequestBuilder,
+    ) -> Result<(reqwest::StatusCode, serde_json::Value), String> {
+        let req = if self.api_key.is_empty() {
+            req
+        } else {
+            req.bearer_auth(self.api_key.clone())
+        };
+        let resp = req
+            .send()
+            .await
+            .map_err(|e| format!("无法连接模型服务（{}），请确认服务已启动、URL 正确: {e}", self.base_url))?;
+        let status = resp.status();
+        if !status.is_success() {
+            let eb: serde_json::Value = resp.json().await.unwrap_or_default();
+            let msg = eb["error"]["message"]
+                .as_str()
+                .or_else(|| eb["error"].as_str())
+                .unwrap_or("")
+                .to_string();
+            if status == reqwest::StatusCode::NOT_FOUND {
+                return Err(format!(
+                    "模型服务返回 404：{msg}。请检查 base_url 是否以 /v1 结尾、模型名是否正确。"
+                ));
+            }
+            if status == reqwest::StatusCode::UNAUTHORIZED {
+                return Err(format!("模型服务返回 401：{msg}。请检查 API Key 是否正确。"));
+            }
+            return Err(format!("模型服务返回错误: HTTP {status} {msg}").trim_end().to_string());
+        }
+        let json: serde_json::Value = resp
+            .json()
+            .await
+            .map_err(|e| format!("解析模型服务响应失败: {e}"))?;
+        Ok((status, json))
+    }
+
+    /// 调用多模态 `/chat/completions` 判断是否专注。
     pub async fn detect(
         &self,
         model: &str,
@@ -48,173 +94,75 @@ impl OllamaClient {
              判断标准：画面内容与任务一致 = focused=true；画面明显与任务无关（刷手机、看视频、聊天、离开等）= focused=false；无法确定时倾向于 focused=true。",
             user_prompt
         );
+        let image_data_url = format!("data:image/jpeg;base64,{image_b64}");
         let body = serde_json::json!({
             "model": model,
-            "prompt": prompt,
-            "images": [image_b64],
-            "stream": false,
-            "format": "json",
-            "options": { "temperature": 0.2, "num_predict": 256 }
+            "messages": [{
+                "role": "user",
+                "content": [
+                    { "type": "text", "text": prompt },
+                    { "type": "image_url", "image_url": { "url": image_data_url } }
+                ]
+            }],
+            "max_tokens": 256,
+            "temperature": 0.2,
+            "stream": false
         });
-        let client = reqwest::Client::builder()
-            .timeout(Duration::from_secs(240))
-            .build()
-            .map_err(|e| format!("HTTP 客户端初始化失败: {e}"))?;
-        let url = format!("{}/api/generate", self.url);
-        let resp = client
-            .post(&url)
-            .json(&body)
-            .send()
-            .await
-            .map_err(|e| format!("无法连接 Ollama（{}），请确认 Ollama 已启动: {e}", self.url))?;
-        let status = resp.status();
-        if !status.is_success() {
-            let err_body: serde_json::Value = resp.json().await.unwrap_or_default();
-            let ollama_err = err_body["error"].as_str().unwrap_or("").trim().to_string();
-            if status == reqwest::StatusCode::NOT_FOUND && ollama_err.contains("not found") {
-                return Err(format!(
-                    "模型「{}」不存在（HTTP 404）：{}。请先在「模型」页拉取该模型，或执行: ollama pull {}",
-                    model, ollama_err, model
-                ));
-            }
-            return Err(format!("Ollama 返回错误: HTTP {status} {ollama_err}").trim_end().to_string());
+        let url = format!("{}/chat/completions", self.base_url);
+        let client = self.client(Duration::from_secs(240)).await?;
+        let (_, json) = self.send(client.post(&url).json(&body)).await?;
+        let text = json["choices"][0]["message"]["content"]
+            .as_str()
+            .unwrap_or("")
+            .trim()
+            .to_string();
+        if text.is_empty() {
+            return Err("模型未返回内容，请检查模型是否支持图像输入".into());
         }
-        let json: serde_json::Value = resp
-            .json()
-            .await
-            .map_err(|e| format!("解析 Ollama 响应失败: {e}"))?;
-        let text = json["response"].as_str().unwrap_or("").trim().to_string();
         let (focused, reason) = parse_detection(&text);
         Ok(DetectionResult {
             focused,
             reason,
             source: String::new(),
             model: model.to_string(),
-            backend: "ollama".into(),
+            backend: "openai".into(),
             duration_ms: started.elapsed().as_millis() as u64,
         })
     }
 
-    pub async fn list_models(&self) -> Result<Vec<OllamaModel>, String> {
-        let client = reqwest::Client::builder()
-            .timeout(Duration::from_secs(5))
-            .build()
-            .map_err(|e| e.to_string())?;
-        let url = format!("{}/api/tags", self.url);
-        let resp = client
-            .get(&url)
-            .send()
-            .await
-            .map_err(|e| format!("连接 Ollama 失败: {e}"))?;
-        let json: serde_json::Value = resp
-            .json()
-            .await
-            .map_err(|e| format!("解析失败: {e}"))?;
-        let mut models = Vec::new();
-        if let Some(arr) = json["models"].as_array() {
+    /// 列出模型（GET /models），也用于测试连接。
+    pub async fn list_models(&self) -> Result<Vec<ModelInfo>, String> {
+        let client = self.client(Duration::from_secs(8)).await?;
+        let url = format!("{}/models", self.base_url);
+        let (_, json) = self.send(client.get(&url)).await?;
+        let mut out = Vec::new();
+        if let Some(arr) = json["data"].as_array() {
             for m in arr {
-                models.push(OllamaModel {
-                    name: m["name"].as_str().unwrap_or("").to_string(),
-                    size: m["size"].as_u64().unwrap_or(0),
-                    digest: m["digest"].as_str().unwrap_or("").to_string(),
-                    modified_at: m["modified_at"].as_str().unwrap_or("").to_string(),
-                });
+                if let Some(id) = m["id"].as_str() {
+                    out.push(ModelInfo { id: id.to_string() });
+                }
             }
         }
-        Ok(models)
-    }
-
-    pub async fn is_running(&self) -> bool {
-        let client = match reqwest::Client::builder()
-            .timeout(Duration::from_secs(2))
-            .build()
-        {
-            Ok(c) => c,
-            Err(_) => return false,
-        };
-        let url = format!("{}/api/tags", self.url);
-        matches!(client.get(&url).send().await, Ok(r) if r.status().is_success())
+        Ok(out)
     }
 }
 
-pub fn ollama_installed() -> bool {
-    let exe = if cfg!(windows) { "ollama.exe" } else { "ollama" };
-    std::env::var_os("PATH")
-        .map(|p| std::env::split_paths(&p).any(|dir| dir.join(exe).exists()))
-        .unwrap_or(false)
-}
-
-/// 后台启动 `ollama serve`。
-pub fn spawn_ollama_serve() -> Result<(), String> {
-    if !ollama_installed() {
-        return Err("未在 PATH 中找到 ollama，请先安装：https://ollama.com/download".into());
-    }
-    #[cfg(windows)]
-    {
-        use std::os::windows::process::CommandExt;
-        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
-        let mut child = std::process::Command::new("ollama");
-        child.arg("serve").creation_flags(CREATE_NO_WINDOW);
-        child.spawn().map_err(|e| format!("启动 Ollama 失败: {e}"))?;
-        Ok(())
-    }
-    #[cfg(not(windows))]
-    {
-        std::process::Command::new("ollama")
-            .arg("serve")
-            .spawn()
-            .map_err(|e| format!("启动 Ollama 失败: {e}"))?;
-        Ok(())
-    }
-}
-
-/// 拉取模型，逐行输出进度事件 `ollama://pull`。
-pub async fn pull_model_async(app: &tauri::AppHandle, model: &str) -> Result<(), String> {
-    use tauri::Emitter;
-    use tokio::io::AsyncBufReadExt;
-
-    if !ollama_installed() {
-        return Err("未在 PATH 中找到 ollama，请先安装：https://ollama.com/download".into());
-    }
-    let mut child = tokio::process::Command::new("ollama")
-        .args(["pull", model])
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::piped())
-        .spawn()
-        .map_err(|e| format!("启动 ollama pull 失败: {e}"))?;
-    let stdout = child.stdout.take().ok_or("无法读取输出")?;
-    let stderr = child.stderr.take().ok_or("无法读取错误输出")?;
-
-    let app2 = app.clone();
-    let model2 = model.to_string();
-    let t1 = tokio::task::spawn(async move {
-        let mut lines = tokio::io::BufReader::new(stdout).lines();
-        while let Ok(Some(line)) = lines.next_line().await {
-            let _ = app2.emit(
-                "ollama://pull",
-                serde_json::json!({ "model": model2, "line": line }),
-            );
-        }
-    });
-    let app3 = app.clone();
-    let model3 = model.to_string();
-    let t2 = tokio::task::spawn(async move {
-        let mut lines = tokio::io::BufReader::new(stderr).lines();
-        while let Ok(Some(line)) = lines.next_line().await {
-            let _ = app3.emit(
-                "ollama://pull",
-                serde_json::json!({ "model": model3, "line": line }),
-            );
-        }
-    });
-
-    let status = child.wait().await.map_err(|e| e.to_string())?;
-    let _ = t1.await;
-    let _ = t2.await;
-    if status.success() {
-        Ok(())
-    } else {
-        Err(format!("ollama pull 退出码: {:?}", status.code()))
+/// 模拟检测：前 6 次「专注」，接着 2 次「开小差」，循环往复。
+/// 用于没有可用模型时演示完整流程。
+pub fn mock_detect(source: &str, tick: u64) -> DetectionResult {
+    let phase = tick % 8;
+    let focused = phase < 6;
+    DetectionResult {
+        focused,
+        reason: if focused {
+            "（模拟）画面与任务一致，保持专注。".into()
+        } else {
+            "（模拟）检测到画面偏离任务，疑似开小差。".into()
+        },
+        source: source.into(),
+        model: "mock".into(),
+        backend: "mock".into(),
+        duration_ms: 5,
     }
 }
 
@@ -244,23 +192,4 @@ fn parse_detection(text: &str) -> (bool, String) {
         }
     }
     (true, "模型输出无法解析，按专注处理".into())
-}
-
-/// 模拟检测：前 6 次「专注」，接着 2 次「开小差」，循环往复。
-/// 用于在没有 GPU / 未装 Ollama 时体验完整流程。
-pub fn mock_detect(source: &str, tick: u64) -> DetectionResult {
-    let phase = tick % 8;
-    let focused = phase < 6;
-    DetectionResult {
-        focused,
-        reason: if focused {
-            "（模拟）画面与任务一致，保持专注。".into()
-        } else {
-            "（模拟）检测到画面偏离任务，疑似开小差。".into()
-        },
-        source: source.into(),
-        model: "mock".into(),
-        backend: "mock".into(),
-        duration_ms: 5,
-    }
 }

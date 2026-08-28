@@ -1,10 +1,10 @@
 export const PRESET_MODELS = [
-  "qwen2.5vl:7b",
-  "qwen2.5vl:3b",
-  "gemma3:4b",
-  "moondream",
+  "qwen3-vl:8b",
+  "qwen3-vl:4b",
+  "qwen3-vl:2b",
+  "qwen3-vl:32b",
+  "gpt-4o-mini",
   "llava:7b",
-  "minicpm-v:8b",
 ];
 
 export const REMINDER_LABELS: Record<string, string> = {

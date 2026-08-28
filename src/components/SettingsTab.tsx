@@ -1,20 +1,32 @@
 import { useEffect, useState } from "react";
 import { api } from "../api";
-import { PRESET_MODELS, REMINDER_LABELS } from "../presets";
-import type { Config, RecommendResult } from "../types";
+import { REMINDER_LABELS } from "../presets";
+import type { Config, ConnectionTest, RecommendResult } from "../types";
+import { validateConfig } from "../validate";
 
 interface Props {
   config: Config | null;
   gpu: RecommendResult | null;
+  firstRun: boolean;
   onSave: (cfg: Config) => Promise<void>;
+  onGoStatus: () => void;
   onToast: (msg: string) => void;
 }
 
-export default function SettingsTab({ config, gpu, onSave, onToast }: Props) {
+export default function SettingsTab({
+  config,
+  gpu,
+  firstRun,
+  onSave,
+  onGoStatus,
+  onToast,
+}: Props) {
   const [cfg, setCfg] = useState<Config | null>(null);
   const [monitors, setMonitors] = useState<string[]>([]);
   const [cameras, setCameras] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
+  const [connTest, setConnTest] = useState<ConnectionTest | null>(null);
+  const [testing, setTesting] = useState(false);
 
   useEffect(() => {
     if (config) setCfg(structuredClone(config));
@@ -34,22 +46,54 @@ export default function SettingsTab({ config, gpu, onSave, onToast }: Props) {
 
   if (!cfg) return <div className="placeholder">加载中…</div>;
 
+  const validation = validateConfig(cfg);
+
   const set = <K extends keyof Config>(key: K, value: Config[K]) =>
     setCfg((c) => (c ? { ...c, [key]: value } : c));
-
+  const setModel = (patch: Partial<Config["modelApi"]>) =>
+    setCfg((c) => (c ? { ...c, modelApi: { ...c.modelApi, ...patch } } : c));
   const setSource = (
     which: "screen" | "camera",
     patch: Partial<Config["screen"]>
   ) => setCfg((c) => (c ? { ...c, [which]: { ...c[which], ...patch } } : c));
-
   const setReminder = (patch: Partial<Config["reminder"]>) =>
     setCfg((c) => (c ? { ...c, reminder: { ...c.reminder, ...patch } } : c));
+
+  const runTestConnection = async () => {
+    setTesting(true);
+    setConnTest(null);
+    try {
+      const r = await api.testConnection(cfg.modelApi.apiUrl, cfg.modelApi.apiKey);
+      setConnTest(r);
+      onToast(r.ok ? r.message : `连接失败：${r.message}`);
+    } catch (e) {
+      onToast(`测试出错：${e}`);
+    } finally {
+      setTesting(false);
+    }
+  };
 
   const testReminder = () => {
     api
       .sendTestReminder(cfg.reminder.kind, cfg.reminder.voiceText)
       .then(() => onToast("已发送测试提醒"))
       .catch((e) => onToast(`测试失败：${e}`));
+  };
+
+  const doSave = async () => {
+    if (!validation.ok) {
+      onToast(validation.errors[0]);
+      return;
+    }
+    setSaving(true);
+    try {
+      await onSave(cfg);
+      if (firstRun) onGoStatus();
+    } catch (e) {
+      onToast(`保存失败：${e}`);
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
@@ -124,40 +168,68 @@ export default function SettingsTab({ config, gpu, onSave, onToast }: Props) {
       </section>
 
       <section className="card">
-        <h2>检测参数</h2>
+        <h2>模型服务（OpenAI 兼容）</h2>
         <div className="row">
-          <label>推理后端</label>
-          <select
-            value={cfg.backend}
-            onChange={(e) => set("backend", e.target.value as Config["backend"])}
-          >
-            <option value="ollama">Ollama 本地模型</option>
-            <option value="mock">模拟模式（无需模型，演示用）</option>
-          </select>
+          <label className="check">
+            <input
+              type="checkbox"
+              checked={cfg.demoMode}
+              onChange={(e) => set("demoMode", e.target.checked)}
+            />
+            演示模式（无需模型，模拟检测）
+          </label>
         </div>
-        {cfg.backend === "ollama" && (
+        {!cfg.demoMode ? (
           <>
             <div className="row">
-              <label>模型</label>
+              <label>服务 URL</label>
               <input
-                list="model-list"
-                value={cfg.model}
-                onChange={(e) => set("model", e.target.value)}
+                placeholder="http://localhost:11434/v1 或 https://api.openai.com/v1"
+                value={cfg.modelApi.apiUrl}
+                onChange={(e) => setModel({ apiUrl: e.target.value })}
               />
-              <datalist id="model-list">
-                {PRESET_MODELS.map((m) => (
-                  <option key={m} value={m} />
-                ))}
-              </datalist>
             </div>
             <div className="row">
-              <label>Ollama 地址</label>
+              <label>API Key</label>
               <input
-                value={cfg.ollamaUrl}
-                onChange={(e) => set("ollamaUrl", e.target.value)}
+                type="password"
+                placeholder="本地服务可留空"
+                value={cfg.modelApi.apiKey}
+                onChange={(e) => setModel({ apiKey: e.target.value })}
               />
             </div>
+            <div className="row">
+              <label>模型名</label>
+              <input
+                placeholder="例如 qwen3-vl:4b 或 gpt-4o-mini"
+                value={cfg.modelApi.model}
+                onChange={(e) => setModel({ model: e.target.value })}
+              />
+              <span className="hint-inline">
+                需要支持图像输入
+                {gpu ? `（已按 GPU 推荐：${gpu.model}）` : ""}
+              </span>
+            </div>
+            <div className="row">
+              <button className="btn" disabled={testing} onClick={runTestConnection}>
+                {testing ? "测试中…" : "测试连接"}
+              </button>
+              {connTest && (
+                <span className={`hint-inline ${connTest.ok ? "link-btn" : "warn-text"}`}>
+                  {connTest.message}
+                  {connTest.models.length > 0 && `：${connTest.models.join(", ")}`}
+                </span>
+              )}
+            </div>
+            <p className="hint">
+              兼容任意 OpenAI 风格服务。若是本地 Ollama，需先自行启动并拉取模型，再把地址填成
+              <code> http://localhost:11434/v1</code>（应用不负责下载/管理模型）。
+            </p>
           </>
+        ) : (
+          <p className="hint">
+            演示模式：无需模型即可体验完整监控流程（检测结果由程序模拟，约每 8 轮出现一次开小差）。
+          </p>
         )}
         <div className="row">
           <label>检测间隔（秒）</label>
@@ -168,6 +240,9 @@ export default function SettingsTab({ config, gpu, onSave, onToast }: Props) {
             value={cfg.intervalSecs}
             onChange={(e) => set("intervalSecs", Number(e.target.value))}
           />
+          <span className="hint-inline">
+            {gpu ? `已按 GPU 自动推荐 ${gpu.intervalSecs}s` : ""}，可手动改
+          </span>
         </div>
         <div className="row">
           <label>图片最大宽度（px）</label>
@@ -183,39 +258,19 @@ export default function SettingsTab({ config, gpu, onSave, onToast }: Props) {
       </section>
 
       <section className="card">
-        <h2>GPU 检测与参数推荐</h2>
+        <h2>GPU 检测</h2>
         {gpu ? (
-          <>
-            <div className="row">
-              <span className="gpu-name">🖥 {gpu.gpu.name || "未知 GPU"}</span>
-              <span className="hint-inline">
-                {gpu.gpu.vramMb
-                  ? `${gpu.gpu.vramMb} MB 显存`
-                  : "显存未知"}
-                {" · "}
-                {gpu.gpu.source}
-              </span>
-            </div>
-            <div className="rec-box">
-              <p>
-                推荐模型：<strong>{gpu.model}</strong>　推荐间隔：
-                <strong>{gpu.intervalSecs} 秒</strong>
-              </p>
-              <p className="hint">{gpu.note}</p>
-              <button
-                className="btn"
-                onClick={() => {
-                  set("model", gpu.model);
-                  set("intervalSecs", gpu.intervalSecs);
-                  onToast("已应用推荐参数，可再手动微调");
-                }}
-              >
-                应用推荐参数
-              </button>
-            </div>
-          </>
+          <div className="row">
+            <span className="gpu-name">🖥 {gpu.gpu.name || "未知 GPU"}</span>
+            <span className="hint-inline">
+              {gpu.gpu.vramMb ? `${gpu.gpu.vramMb} MB 显存` : "显存未知"}
+              {" · "}
+              {gpu.gpu.source}
+            </span>
+            <span className="hint-inline">{gpu.note}</span>
+          </div>
         ) : (
-          <p className="hint">正在检测 GPU…（无 GPU 时会推荐 CPU 方案）</p>
+          <p className="hint">正在检测 GPU…</p>
         )}
       </section>
 
@@ -248,7 +303,7 @@ export default function SettingsTab({ config, gpu, onSave, onToast }: Props) {
                 测试提醒
               </button>
               <span className="hint-inline">
-                Linux 语音需要 speech-dispatcher 服务运行
+                Windows 走系统语音（SAPI），Linux 需要 speech-dispatcher
               </span>
             </div>
           </>
@@ -279,22 +334,24 @@ export default function SettingsTab({ config, gpu, onSave, onToast }: Props) {
         </div>
       </section>
 
+      {!validation.ok && (
+        <div className="validation-errors">
+          <p>配置还不完整，无法开始监控：</p>
+          <ul>
+            {validation.errors.map((e, i) => (
+              <li key={i}>· {e}</li>
+            ))}
+          </ul>
+        </div>
+      )}
+
       <div className="save-bar">
         <button
           className="btn primary big"
-          disabled={saving}
-          onClick={async () => {
-            setSaving(true);
-            try {
-              await onSave(cfg);
-            } catch (e) {
-              onToast(`保存失败：${e}`);
-            } finally {
-              setSaving(false);
-            }
-          }}
+          disabled={saving || !validation.ok}
+          onClick={doSave}
         >
-          {saving ? "保存中…" : "保存配置"}
+          {firstRun ? "保存配置并进入监控" : saving ? "保存中…" : "保存配置"}
         </button>
       </div>
     </div>

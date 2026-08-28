@@ -8,11 +8,11 @@
 
 - 📺 **屏幕监控**：按设定的间隔截取屏幕（Windows / macOS / Linux-X11）。
 - 📷 **摄像头监控**：按设定的间隔抓取摄像头帧（Windows / macOS / Linux-V4L2）。
-- 🧠 **本地小模型判断**：接入 Ollama 视觉语言模型（默认推荐 Qwen2.5-VL 3B/7B），**所有画面只发送到本机 127.0.0.1，绝不上传云端**。
+- 🧠 **本地小模型判断**：接入任意 **OpenAI 兼容**的视觉模型服务（本地 Ollama、vLLM、LocalAI，或云端 OpenAI/DeepSeek 等），只需填一个兼容 URL。**所有画面只发给该服务，应用不代理模型的下载/安装**。
 - 🎨 **分别配置提示词**：屏幕与摄像头可以同时开启，并各自配置独立的「任务提示词」。
 - 🔔 **双提醒方式**：系统通知（Windows 通知中心 / macOS 通知 / Linux libnotify）与语音播报（Windows SAPI / macOS say / Linux speech-dispatcher），可二选一或都要；支持提醒冷却与「连续 N 次开小差才提醒」。
 - 🖥 **GPU 检测与参数推荐**：自动检测显卡（nvidia-smi / system_profiler / PowerShell / lspci），按显存推荐模型与检测间隔（可手动修改）。
-- 🧪 **模拟模式**：没有 GPU / 未安装 Ollama 时，可用内置模拟后端体验完整监控流程。
+- 🧪 **演示模式**：没有可用模型时，勾选即可体验完整监控流程（结果由程序模拟）。
 - 📋 **实时状态**：专注/开小差指示、持续时长、连续开小差次数、检测历史、模型耗时。
 
 ## 🏗 技术架构
@@ -34,11 +34,11 @@
                                                          │  HTTP (本机)
                                           ┌──────────────▼───────────────┐
                                           │  Ollama serve (127.0.0.1:11434)│
-                                          │  qwen2.5vl / moondream / …    │
+                                          │  qwen3-vl / llava / …          │
                                           └──────────────────────────────┘
 ```
 
-监控循环：每个检测间隔 → 采集画面 → 缩放/JPEG → base64 → Ollama `/api/generate`（要求输出严格 JSON）→ 解析 `{focused, reason}` → 连续 N 次开小差且过冷却期 → 触发提醒。
+监控循环：每个检测间隔 → 采集画面 → 缩放/JPEG → base64 → OpenAI 兼容 `/chat/completions`（多模态，要求输出严格 JSON）→ 解析 `{focused, reason}` → 连续 N 次开小差且过冷却期 → 触发提醒。
 
 ## 📁 目录结构
 
@@ -73,7 +73,7 @@ focus-guard/
 | Node.js | ≥ 18 | 前端构建 |
 | Rust | stable (≥ 1.77) | 后端编译 |
 | Tauri CLI | 2.x | `npm i` 自带（`@tauri-apps/cli`） |
-| Ollama | 最新 | [ollama.com/download](https://ollama.com/download)，应用通过本机 API 调用 |
+| 模型服务 | — | **可选**。任意 OpenAI 兼容服务（本地 Ollama/vLLM/LocalAI 或云端），只需填一个兼容 URL |
 
 ### Linux 系统依赖（Ubuntu/Debian）
 
@@ -143,7 +143,7 @@ npm run tauri build
 
 - 摄像头：Windows 设置 → 隐私和安全性 → 相机，允许桌面应用访问相机；
 - 屏幕捕获：Windows 10 1903+ 无需额外授权；
-- 装 Ollama（Windows 版）：[ollama.com/download](https://ollama.com/download)，装好后直接 `ollama pull qwen2.5vl:3b`；
+- 装 Ollama（Windows 版）：[ollama.com/download](https://ollama.com/download)，装好后直接 `ollama pull qwen3-vl:4b`；
 - 没装 Ollama 时，先在「设置」里把后端切到**模拟模式**体验完整流程。
 
 ### Windows WSL2（Ubuntu）快速跑起来
@@ -161,7 +161,7 @@ focus-guard
 # 4.（可选）安装 Ollama 使用真实模型
 curl -fsSL https://ollama.com/install.sh | sh
 ollama serve
-ollama pull qwen2.5vl:3b
+ollama pull qwen3-vl:4b
 ```
 
 WSL2 注意事项：
@@ -173,24 +173,26 @@ WSL2 注意事项：
 
 ## 📖 使用指南
 
-1. **装好 Ollama 并拉取视觉模型**（模型页也可以一键拉取）：
+1. **准备模型服务**（可选，或用演示模式跳过）：本地装 [Ollama](https://ollama.com/download) 并拉取模型，例如：
    ```bash
-   ollama serve          # 后台运行（应用内也有「启动 Ollama」按钮）
-   ollama pull qwen2.5vl:3b
+   ollama serve          # 启动本地服务
+   ollama pull qwen3-vl:4b
    ```
+   或使用任意 OpenAI 兼容云端服务。
 2. 打开应用 → **设置**：
    - 勾选采集源（屏幕/摄像头，可都开），分别填写**任务提示词**；
-   - 查看 **GPU 检测与参数推荐**，点「应用推荐参数」（也可手动改模型与间隔）；
+   - 在「模型服务」填写 **服务 URL / API Key / 模型名**（本地 Ollama 填 `http://localhost:11434/v1`，可点「测试连接」验证）；
+   - 查看 GPU 推荐（已自动填入模型名与检测间隔，可手动改）；
    - 选择提醒方式（系统通知 / 语音 / 两者），可自定义语音内容。
-3. **模型**页：确认 Ollama 运行中、模型已就绪，可先「测试屏幕检测」验证链路。
-4. 回到 **监控状态**，点「开始监控」。
+3. **模型**页：测试连接、选用可用模型、或对当前配置做一次「测试检测」。
+4. 回到 **监控状态**，点「开始监控」（配置不完整时按钮会禁用并提示）。
 
 ## 🖥 GPU 推荐逻辑
 
 | 显存 | 推荐模型 | 推荐间隔 |
 |---|---|---|
-| ≥ 8 GB | `qwen2.5vl:7b` | 10 s |
-| ≥ 4 GB | `qwen2.5vl:3b` | 15 s |
+| ≥ 8 GB | `qwen3-vl:8b` | 10 s |
+| ≥ 4 GB | `qwen3-vl:4b` | 15 s |
 | ≥ 2 GB | `moondream` (1.8B) | 20 s |
 | 无独显 / 显存未知 | `moondream` | 30 s |
 
@@ -198,7 +200,7 @@ WSL2 注意事项：
 
 ## 🔒 隐私说明
 
-- 截图与摄像头帧**仅在本地处理**，经 base64 发送给**本机** Ollama 服务（127.0.0.1:11434），不上传任何云端服务。
+- 截图与摄像头帧**仅在本地处理**，经 base64 发送给你配置的模型服务（本地服务则不离开本机；云端服务则按你选择的平台策略处理）。
 - 检测后图片立即丢弃，不落盘、不记录画面内容，仅保留文字化的检测结果（时间、专注与否、模型原因）。
 - 配置与检测历史保存在系统应用配置目录（`app_config_dir/config.json`）。
 
@@ -206,6 +208,6 @@ WSL2 注意事项：
 
 - Linux 屏幕捕获仅支持 X11（Wayland 需走 Portal 方案，暂未实现）。
 - 每次检测都会重新打开摄像头，首次帧延迟约数百毫秒；后续可优化为常驻采集线程。
-- Ollama 首次加载模型到显存需要数秒到数十秒，首个检测结果会偏慢。
+- 本地模型服务首次加载模型到显存需要数秒到数十秒，首个检测结果会偏慢。
 - 提醒语音（Linux）依赖 speech-dispatcher 服务运行。
 - 模型可能误判：提示词写清楚、画面角度稳定时效果最好；判定倾向于「无法确定=专注」，降低误报。

@@ -1,11 +1,6 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { api, events } from "./api";
-import type {
-  Config,
-  MonitorSnapshot,
-  OllamaInfo,
-  RecommendResult,
-} from "./types";
+import type { Config, MonitorSnapshot, RecommendResult } from "./types";
 import StatusTab from "./components/StatusTab";
 import SettingsTab from "./components/SettingsTab";
 import ModelsTab from "./components/ModelsTab";
@@ -17,23 +12,16 @@ export default function App() {
   const [config, setConfig] = useState<Config | null>(null);
   const [snapshot, setSnapshot] = useState<MonitorSnapshot | null>(null);
   const [gpu, setGpu] = useState<RecommendResult | null>(null);
-  const [ollama, setOllama] = useState<OllamaInfo | null>(null);
-  const [pullLog, setPullLog] = useState<string[]>([]);
   const [toast, setToast] = useState<string | null>(null);
   const toastTimer = useRef<number | undefined>(undefined);
+  const recApplied = useRef(false);
+  const [isFirstRun, setIsFirstRun] = useState(false);
 
-  const showToast = (msg: string) => {
+  const showToast = useCallback((msg: string) => {
     setToast(msg);
     window.clearTimeout(toastTimer.current);
     toastTimer.current = window.setTimeout(() => setToast(null), 4500);
-  };
-
-  const refreshOllama = async (url?: string) => {
-    const u = url ?? config?.ollamaUrl ?? "http://127.0.0.1:11434";
-    const info = await api.ollamaInfo(u).catch(() => null);
-    setOllama(info);
-    return info;
-  };
+  }, []);
 
   useEffect(() => {
     let disposed = false;
@@ -43,11 +31,15 @@ export default function App() {
         if (disposed) return;
         setConfig(cfg);
         setSnapshot(await api.getMonitorState());
+        // 首次启动：直接进入配置引导
+        if (!cfg.configured) {
+          setIsFirstRun(true);
+          setTab("settings");
+        }
       } catch (e) {
         showToast(`初始化失败：${e}`);
       }
       setGpu(await api.getRecommendation().catch(() => null));
-      refreshOllama();
     })();
     const unsubs = [
       events.onTick((t) =>
@@ -59,7 +51,6 @@ export default function App() {
         setSnapshot((prev) => (prev ? { ...prev, running: s.running } : prev))
       ),
       events.onReminder((r) => showToast(`【${r.title}】${r.text}`)),
-      events.onPull((p) => setPullLog((l) => [...l.slice(-99), p.line])),
     ];
     return () => {
       disposed = true;
@@ -68,10 +59,27 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // GPU 推荐参数自动应用（只应用一次，之后以用户手动修改为准）
+  useEffect(() => {
+    if (gpu && config && !recApplied.current) {
+      recApplied.current = true;
+      setConfig((c) =>
+        c
+          ? {
+              ...c,
+              modelApi: { ...c.modelApi, model: gpu.model },
+              intervalSecs: gpu.intervalSecs,
+            }
+          : c
+      );
+    }
+  }, [gpu, config]);
+
   const startMonitoring = async (cfg: Config) => {
     try {
       await api.startMonitoring(cfg);
       setConfig(cfg);
+      setIsFirstRun(false);
       setSnapshot(await api.getMonitorState());
       showToast("监控已启动，开始检测专注度…");
     } catch (e) {
@@ -87,8 +95,17 @@ export default function App() {
 
   const saveConfig = async (cfg: Config) => {
     await api.saveConfig(cfg);
-    setConfig(cfg);
+    const saved = { ...cfg, configured: true };
+    setConfig(saved);
+    setIsFirstRun(false);
     showToast("配置已保存");
+  };
+
+  const goSettings = () => setTab("settings");
+
+  const pickModel = (model: string) => {
+    setConfig((c) => (c ? { ...c, modelApi: { ...c.modelApi, model } } : c));
+    showToast(`已选择模型：${model}（记得保存设置）`);
   };
 
   return (
@@ -123,6 +140,11 @@ export default function App() {
           {snapshot?.running && <span className="badge running">● 监控中</span>}
         </div>
       </header>
+      {isFirstRun && (
+        <div className="onboarding-banner">
+          首次使用：请先完成下方设置（采集源、提示词、模型服务），保存后即可开始监控。
+        </div>
+      )}
       <main className="app-main">
         {tab === "status" && (
           <StatusTab
@@ -130,22 +152,25 @@ export default function App() {
             snapshot={snapshot}
             onStart={startMonitoring}
             onStop={stopMonitoring}
+            onGoSettings={goSettings}
           />
         )}
         {tab === "settings" && (
           <SettingsTab
             config={config}
             gpu={gpu}
+            firstRun={isFirstRun}
             onSave={saveConfig}
+            onGoStatus={() => setTab("status")}
             onToast={showToast}
           />
         )}
         {tab === "models" && (
           <ModelsTab
-            ollama={ollama}
-            refreshOllama={refreshOllama}
-            pullLog={pullLog}
+            config={config}
             onToast={showToast}
+            onPickModel={pickModel}
+            onGoSettings={goSettings}
           />
         )}
       </main>

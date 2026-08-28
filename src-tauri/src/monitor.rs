@@ -1,6 +1,6 @@
 use crate::capture;
 use crate::config::Config;
-use crate::model::{self, DetectionResult, OllamaClient};
+use crate::model::{self, DetectionResult};
 use crate::reminder;
 use serde::{Deserialize, Serialize};
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -152,8 +152,8 @@ async fn run_loop(
                                 source: source.clone(),
                                 focused: true, // 出错不计为开小差
                                 reason: String::new(),
-                                model: cfg.model.clone(),
-                                backend: cfg.backend.clone(),
+                                model: cfg.model_api.model.clone(),
+                                backend: if cfg.demo_mode { "mock".into() } else { "openai".into() },
                                 duration_ms: 0,
                                 ts: now_ms(),
                                 error: Some(e),
@@ -251,7 +251,7 @@ async fn check_source(source: &str, cfg: &Config, tick_no: u64) -> Result<Detect
 
     let b64 = capture::to_jpeg_base64(&img, 70)?;
 
-    if cfg.backend == "mock" {
+    if cfg.demo_mode {
         return Ok(model::mock_detect(source, tick_no));
     }
 
@@ -260,8 +260,11 @@ async fn check_source(source: &str, cfg: &Config, tick_no: u64) -> Result<Detect
     } else {
         cfg.camera.prompt.clone()
     };
-    let client = OllamaClient::new(cfg.ollama_url.clone());
-    let mut det = client.detect(&cfg.model, &prompt, &b64).await?;
+    let client = model::OpenAiClient::new(
+        cfg.model_api.api_url.clone(),
+        cfg.model_api.api_key.clone(),
+    );
+    let mut det = client.detect(&cfg.model_api.model, &prompt, &b64).await?;
     det.source = source.to_string();
     Ok(det)
 }

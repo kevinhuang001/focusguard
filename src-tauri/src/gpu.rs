@@ -159,24 +159,24 @@ pub fn recommend(gpu: &GpuInfo) -> RecommendResult {
     let vram = gpu.vram_mb.unwrap_or(0);
     let (model, interval_secs, note) = match vram {
         v if v >= 8000 => (
-            "qwen2.5vl:7b",
+            "qwen3-vl:8b",
             10,
-            "显存充足：推荐 7B 视觉语言模型（Qwen2.5-VL），检测间隔 10 秒，约占用 6~7GB 显存。",
+            "显存充足：推荐 Qwen3-VL 8B 视觉语言模型，检测间隔 10 秒（约占用 6~7GB 显存）。",
         ),
         v if v >= 4000 => (
-            "qwen2.5vl:3b",
+            "qwen3-vl:4b",
             15,
-            "显存中等：推荐 3B 视觉语言模型（Qwen2.5-VL），检测间隔 15 秒，Q4 量化约占用 2.5GB 显存。",
+            "显存中等：推荐 Qwen3-VL 4B 视觉语言模型，检测间隔 15 秒（Q4 量化约占用 3GB 显存）。",
         ),
         v if v >= 2000 => (
-            "moondream",
+            "qwen3-vl:2b",
             20,
-            "显存较小：推荐轻量视觉模型 moondream（1.8B），检测间隔 20 秒。",
+            "显存较小：推荐 Qwen3-VL 2B 轻量视觉模型，检测间隔 20 秒。",
         ),
         _ => (
-            "moondream",
+            "qwen3-vl:2b",
             30,
-            "未检测到独立显卡 / 显存不足：只能 CPU 推理，建议使用 moondream 并拉长检测间隔；也可先用「模拟模式」体验完整流程。",
+            "未检测到独立显卡 / 显存不足：只能 CPU 推理，建议使用 Qwen3-VL 2B 并拉长检测间隔；也可勾选「演示模式」体验完整流程。",
         ),
     };
     RecommendResult {

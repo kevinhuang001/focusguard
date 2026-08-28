@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import type { Config, MonitorSnapshot, MonitorTick } from "../types";
+import { validateConfig } from "../validate";
 
 function fmtDuration(totalSec: number): string {
   const h = Math.floor(totalSec / 3600);
@@ -50,9 +51,16 @@ interface Props {
   snapshot: MonitorSnapshot | null;
   onStart: (cfg: Config) => Promise<void>;
   onStop: () => Promise<void>;
+  onGoSettings: () => void;
 }
 
-export default function StatusTab({ config, snapshot, onStart, onStop }: Props) {
+export default function StatusTab({
+  config,
+  snapshot,
+  onStart,
+  onStop,
+  onGoSettings,
+}: Props) {
   const [now, setNow] = useState(Date.now());
   useEffect(() => {
     const t = window.setInterval(() => setNow(Date.now()), 1000);
@@ -86,6 +94,10 @@ export default function StatusTab({ config, snapshot, onStart, onStop }: Props) 
     : 0;
   const history = [...ticks].slice(-30).reverse();
 
+  // 配置未完成时禁止启动
+  const validation = config ? validateConfig(config) : { ok: false, errors: [] };
+  const canStart = !snapshot.running && validation.ok;
+
   return (
     <div className="status">
       <section className={`status-card ${status}`}>
@@ -101,6 +113,15 @@ export default function StatusTab({ config, snapshot, onStart, onStop }: Props) 
                   : ""}
               </p>
             )}
+            {!snapshot.running && !validation.ok && (
+              <p className="status-sub warn-text">
+                配置未完成：{validation.errors[0]}（
+                <a onClick={onGoSettings} className="link-btn">
+                  去设置
+                </a>
+                ）
+              </p>
+            )}
           </div>
         </div>
         {snapshot.running ? (
@@ -108,8 +129,12 @@ export default function StatusTab({ config, snapshot, onStart, onStop }: Props) 
             停止监控
           </button>
         ) : (
-          <button className="btn primary big" onClick={() => onStart(config)}>
-            开始监控
+          <button
+            className="btn primary big"
+            disabled={!canStart}
+            onClick={() => onStart(config)}
+          >
+            {validation.ok ? "开始监控" : "请先完成设置"}
           </button>
         )}
       </section>

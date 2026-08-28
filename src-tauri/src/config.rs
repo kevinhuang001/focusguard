@@ -23,6 +23,29 @@ impl Default for SourceConfig {
     }
 }
 
+/// 模型服务配置：OpenAI 兼容接口（只需填一个兼容 URL）。
+/// 应用不代理任何模型的下载/安装，用户自备模型服务。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ModelConfig {
+    /// OpenAI 兼容 base_url（如 https://api.openai.com/v1 或 http://localhost:11434/v1）
+    pub api_url: String,
+    /// 可选；本地服务可留空
+    pub api_key: String,
+    /// 模型名，须支持图像输入
+    pub model: String,
+}
+
+impl Default for ModelConfig {
+    fn default() -> Self {
+        Self {
+            api_url: "http://localhost:11434/v1".into(),
+            api_key: String::new(),
+            model: "qwen3-vl:4b".into(),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ReminderConfig {
@@ -51,14 +74,17 @@ impl Default for ReminderConfig {
 pub struct Config {
     pub screen: SourceConfig,
     pub camera: SourceConfig,
-    /// ollama | mock
-    pub backend: String,
-    pub model: String,
+    pub model_api: ModelConfig,
+    /// 演示模式：无需模型即可模拟检测
+    #[serde(default)]
+    pub demo_mode: bool,
     pub interval_secs: u64,
     /// 送入模型的图片最大宽度（按比例缩放，节省显存/算力）
     pub image_max_width: u32,
-    pub ollama_url: String,
     pub reminder: ReminderConfig,
+    /// 是否已完成首次配置（旧配置无此字段时视为未配置，进入引导流程）
+    #[serde(default)]
+    pub configured: bool,
 }
 
 impl Default for Config {
@@ -76,12 +102,12 @@ impl Default for Config {
                 monitor_index: 0,
                 camera_index: 0,
             },
-            backend: "ollama".into(),
-            model: "qwen2.5vl:3b".into(),
+            model_api: ModelConfig::default(),
+            demo_mode: false,
             interval_secs: 15,
             image_max_width: 640,
-            ollama_url: "http://127.0.0.1:11434".into(),
             reminder: ReminderConfig::default(),
+            configured: false,
         }
     }
 }
