@@ -42,8 +42,39 @@ fn voices_dir(app: &AppHandle) -> Result<std::path::PathBuf, String> {
 }
 
 fn piper_exe(app: &AppHandle) -> Result<std::path::PathBuf, String> {
-    let exe = tts_dir(app)?.join(if cfg!(windows) { "piper.exe" } else { "piper" });
-    Ok(exe)
+    let name = if cfg!(windows) { "piper.exe" } else { "piper" };
+    // 优先内置资源（打包内置的引擎），其次应用数据目录（用户手动放置的）
+    if let Ok(dir) = app.path().resource_dir() {
+        let p = dir.join("piper").join(name);
+        if p.exists() {
+            return Ok(p);
+        }
+    }
+    Ok(tts_dir(app)?.join(name))
+}
+
+/// 查找音色文件：优先用户下载（应用数据 tts/voices 或 tts 根目录），其次内置资源。
+fn voice_file(app: &AppHandle, id: &str, ext: &str) -> Option<std::path::PathBuf> {
+    let named = |d: std::path::PathBuf| d.join(format!("{id}.{ext}"));
+    if let Ok(d) = voices_dir(app) {
+        let p = named(d);
+        if p.exists() {
+            return Some(p);
+        }
+    }
+    if let Ok(d) = tts_dir(app) {
+        let p = named(d);
+        if p.exists() {
+            return Some(p);
+        }
+    }
+    if let Ok(dir) = app.path().resource_dir() {
+        let p = named(dir.join("piper").join("voices"));
+        if p.exists() {
+            return Some(p);
+        }
+    }
+    None
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -57,11 +88,10 @@ pub fn piper_status(app: &AppHandle) -> PiperStatus {
     let engine_installed = piper_exe(app).map(|e| e.exists()).unwrap_or(false);
     let installed_voices = piper_voices()
         .iter()
-        .filter_map(|v| {
-            let onnx = voices_dir(app).ok()?.join(format!("{}.onnx", v.id));
-            let json = voices_dir(app).ok()?.join(format!("{}.onnx.json", v.id));
-            (onnx.exists() && json.exists()).then(|| v.id.clone())
+        .filter(|v| {
+            voice_file(app, &v.id, "onnx").is_some() && voice_file(app, &v.id, "onnx.json").is_some()
         })
+        .map(|v| v.id.clone())
         .collect();
     PiperStatus { engine_installed, installed_voices }
 }
@@ -243,14 +273,12 @@ fn speak_system(voice: &str, text: &str) -> Result<(), String> {
 fn speak_piper(app: &AppHandle, voice_id: &str, text: &str) -> Result<(), String> {
     let exe = piper_exe(app)?;
     if !exe.exists() {
-        return Err("未找到 Piper 引擎。请到 GitHub 下载对应系统版本放入应用数据目录的 tts/ 文件夹，或改用「系统语音」。".into());
+        return Err("未找到 Piper 引擎。请点「打开 TTS 文件夹」放入 piper.exe，或改用「系统语音」。".into());
     }
-    let vdir = voices_dir(app)?;
-    let model = vdir.join(format!("{voice_id}.onnx"));
-    let conf = vdir.join(format!("{voice_id}.onnx.json"));
-    if !model.exists() || !conf.exists() {
-        return Err(format!("音色「{voice_id}」未下载，请先在设置里下载/试听。"));
-    }
+    let model = voice_file(app, voice_id, "onnx")
+        .ok_or_else(|| format!("音色「{voice_id}」未找到。请下载该音色或选择内置音色「华妍·轻量」。"))?;
+    let conf = voice_file(app, voice_id, "onnx.json")
+        .ok_or_else(|| format!("音色「{voice_id}」的配置文件(.onnx.json)未找到。"))?;
     let out = std::env::temp_dir().join(format!("focusguard_tts_{}.wav", std::process::id()));
 
     let mut child = Command::new(&exe)

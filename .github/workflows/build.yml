@@ -49,6 +49,26 @@ jobs:
       - name: Install frontend dependencies
         run: npm install
 
+      - name: Prepare bundled Piper engine (current OS)
+        shell: bash
+        run: |
+          mkdir -p src-tauri/resources/piper
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            curl -sL -o piper.zip https://github.com/rhasspy/piper/releases/latest/download/piper_windows_amd64.zip
+            powershell -Command "Expand-Archive -Force piper.zip piper_win"
+            rm -f src-tauri/resources/piper/piper
+            cp piper_win/piper.exe src-tauri/resources/piper/piper.exe
+          elif [ "$RUNNER_OS" = "macOS" ]; then
+            curl -sL -o piper.tar.gz https://github.com/rhasspy/piper/releases/latest/download/piper_macos_aarch64.tar.gz
+            tar xzf piper.tar.gz
+            cp piper/piper src-tauri/resources/piper/piper
+          else
+            curl -sL -o piper.tar.gz https://github.com/rhasspy/piper/releases/latest/download/piper_linux_x86_64.tar.gz
+            tar xzf piper.tar.gz
+            cp piper/piper src-tauri/resources/piper/piper
+            chmod +x src-tauri/resources/piper/piper
+          fi
+
       - name: Build bundles
         run: npm run tauri build -- ${{ matrix.args }}
 

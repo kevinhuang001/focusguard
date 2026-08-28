@@ -35,6 +35,7 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ],
+    "resources": ["resources/piper"],
     "macOS": {
       "infoPlist": "Info.plist"
     }

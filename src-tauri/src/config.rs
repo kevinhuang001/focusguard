@@ -90,7 +90,7 @@ impl Default for TtsConfig {
         Self {
             engine: "system".into(),
             system_voice: String::new(),
-            piper_voice: "zh_CN-huayan-medium".into(),
+            piper_voice: "zh_CN-huayan-x_low".into(),
         }
     }
 }
