@@ -1,4 +1,4 @@
-use crate::config::{self, Config, TtsConfig};
+use crate::config::{self, Config};
 use crate::gpu;
 use crate::model::{self, OpenAiClient};
 use crate::monitor::{self, MonitorSnapshot, MonitorState};
@@ -164,7 +164,7 @@ pub async fn send_test_reminder(
         "voice" => {
             let a = app.clone();
             let t = voice_text.clone();
-            let c = cfg.tts.clone();
+            let c = cfg.clone();
             tokio::task::spawn_blocking(move || crate::tts::speak(&a, &c, &t))
                 .await
                 .map_err(|e| format!("语音线程异常: {e}"))??;
@@ -174,7 +174,7 @@ pub async fn send_test_reminder(
             crate::reminder::system_notify(&app, title, body);
             let a = app.clone();
             let t = voice_text.clone();
-            let c = cfg.tts.clone();
+            let c = cfg.clone();
             tokio::task::spawn_blocking(move || crate::tts::speak(&a, &c, &t))
                 .await
                 .map_err(|e| format!("语音线程异常: {e}"))??;
@@ -207,43 +207,13 @@ pub fn read_history_image(path: String) -> Result<String, String> {
 
 // ---------- TTS ----------
 
+/// 用当前完整配置试听一句示例（AI 语音或系统语音）。
 #[tauri::command]
-pub fn list_piper_voices() -> Vec<crate::tts::PiperVoice> {
-    crate::tts::piper_voices()
-}
-
-#[tauri::command]
-pub fn piper_status(app: AppHandle) -> crate::tts::PiperStatus {
-    crate::tts::piper_status(&app)
-}
-
-#[tauri::command]
-pub fn open_piper_download() -> Result<(), String> {
-    crate::tts::open_piper_download()
-}
-
-#[tauri::command]
-pub fn open_tts_dir(app: AppHandle) -> Result<(), String> {
-    crate::tts::open_tts_dir(&app)
-}
-
-#[tauri::command]
-pub fn get_tts_paths(app: AppHandle) -> crate::tts::TtsPaths {
-    crate::tts::tts_paths(&app)
-}
-
-#[tauri::command]
-pub async fn download_piper_voice(app: AppHandle, id: String) -> Result<(), String> {
-    crate::tts::download_piper_voice(&app, &id).await
-}
-
-/// 用指定 TTS 配置试听一句示例。
-#[tauri::command]
-pub async fn tts_preview(app: AppHandle, tts: TtsConfig) -> Result<String, String> {
+pub async fn tts_preview(app: AppHandle, cfg: Config) -> Result<String, String> {
     let text = "这是语音播报试听：专注，是一种力量。";
     let a = app.clone();
-    let t = tts.clone();
-    tokio::task::spawn_blocking(move || crate::tts::speak(&a, &t, text))
+    let c = cfg.clone();
+    tokio::task::spawn_blocking(move || crate::tts::speak(&a, &c, text))
         .await
         .map_err(|e| format!("试听线程异常: {e}"))??;
     Ok("试听播放完成".into())

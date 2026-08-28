@@ -207,7 +207,7 @@ async fn run_loop(
                     reminder::fire(
                         app.clone(),
                         &cfg.reminder.kind,
-                        &cfg.tts,
+                        &cfg,
                         &text,
                         "专注监控提醒",
                         &text, // 系统通知正文也用 AI/固定文案，不再写死

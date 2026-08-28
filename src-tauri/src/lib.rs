@@ -35,12 +35,6 @@ pub fn run() {
             commands::list_monitors,
             commands::list_cameras,
             commands::read_history_image,
-            commands::list_piper_voices,
-            commands::piper_status,
-            commands::open_piper_download,
-            commands::open_tts_dir,
-            commands::get_tts_paths,
-            commands::download_piper_voice,
             commands::tts_preview,
         ])
         .run(tauri::generate_context!())

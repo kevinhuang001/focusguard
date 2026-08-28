@@ -49,29 +49,6 @@ jobs:
       - name: Install frontend dependencies
         run: npm install
 
-      - name: Prepare bundled Piper engine (current OS)
-        shell: bash
-        run: |
-          mkdir -p src-tauri/resources/piper
-          if [ "$RUNNER_OS" = "Windows" ]; then
-            curl -fsSL -o piper.zip https://github.com/rhasspy/piper/releases/latest/download/piper_windows_amd64.zip
-            python -c "import zipfile; zipfile.ZipFile('piper.zip').extractall('piper_win')"
-            find piper_win -name "piper.exe" -exec cp {} src-tauri/resources/piper/piper.exe \;
-            rm -f src-tauri/resources/piper/piper
-            if [ ! -f src-tauri/resources/piper/piper.exe ]; then echo "ERROR: piper.exe not found after extract:"; find piper_win -maxdepth 3 | head; exit 1; fi
-          elif [ "$RUNNER_OS" = "macOS" ]; then
-            if [ "$(uname -m)" = "arm64" ]; then A=piper_macos_aarch64.tar.gz; else A=piper_macos_x64.tar.gz; fi
-            curl -fsSL -o piper.tar.gz https://github.com/rhasspy/piper/releases/latest/download/$A
-            tar xzf piper.tar.gz
-            find . -path "*/piper" -type f -exec cp {} src-tauri/resources/piper/piper \;
-            chmod +x src-tauri/resources/piper/piper
-          else
-            curl -fsSL -o piper.tar.gz https://github.com/rhasspy/piper/releases/latest/download/piper_linux_x86_64.tar.gz
-            tar xzf piper.tar.gz
-            find . -path "*/piper" -type f -exec cp {} src-tauri/resources/piper/piper \;
-            chmod +x src-tauri/resources/piper/piper
-          fi
-
       - name: Build bundles
         run: npm run tauri build -- ${{ matrix.args }}
 

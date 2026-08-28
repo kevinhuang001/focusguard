@@ -16,9 +16,9 @@ export interface ReminderConfig {
 }
 
 export interface TtsConfig {
-  engine: "system" | "piper";
-  systemVoice: string;
-  piperVoice: string;
+  engine: "ai" | "system";
+  voice: string;
+  model: string;
 }
 
 export interface ModelConfig {
@@ -37,18 +37,6 @@ export interface Config {
   tts: TtsConfig;
   reminder: ReminderConfig;
   configured: boolean;
-}
-
-export interface PiperVoice {
-  id: string;
-  label: string;
-  lang: string;
-  path: string;
-}
-
-export interface PiperStatus {
-  engineInstalled: boolean;
-  installedVoices: string[];
 }
 
 export interface GpuInfo {

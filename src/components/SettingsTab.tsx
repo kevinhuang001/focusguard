@@ -1,12 +1,10 @@
 import { useEffect, useState } from "react";
-import { api, events } from "../api";
+import { api } from "../api";
 import { REMINDER_LABELS } from "../presets";
 import type {
   Config,
   ConnectionTest,
   DetectionResult,
-  PiperStatus,
-  PiperVoice,
   RecommendResult,
 } from "../types";
 import { validateConfig } from "../validate";
@@ -36,11 +34,7 @@ export default function SettingsTab({
   const [testing, setTesting] = useState(false);
   const [detecting, setDetecting] = useState<"screen" | "camera" | null>(null);
   const [testResult, setTestResult] = useState<DetectionResult | null>(null);
-  const [piperVoices, setPiperVoices] = useState<PiperVoice[]>([]);
-  const [piper, setPiper] = useState<PiperStatus | null>(null);
   const [ttsTesting, setTtsTesting] = useState(false);
-  const [dl, setDl] = useState<{ id: string; pct: number } | null>(null);
-  const [ttsPaths, setTtsPaths] = useState<{ ttsDir: string; voicesDir: string } | null>(null);
 
   useEffect(() => {
     if (config) setCfg(structuredClone(config));
@@ -49,17 +43,6 @@ export default function SettingsTab({
   useEffect(() => {
     api.listMonitors().then(setMonitors).catch(() => onToast("无法获取显示器列表"));
     api.listCameras().then(setCameras).catch(() => onToast("无法枚举摄像头"));
-    api.listPiperVoices().then(setPiperVoices).catch(() => {});
-    api.piperStatus().then(setPiper).catch(() => {});
-    api.getTtsPaths().then(setTtsPaths).catch(() => {});
-    const un = events.onDownloadProgress((p) => {
-      if (p.total && p.total > 0) {
-        setDl({ id: p.id, pct: Math.round((p.bytes / p.total) * 100) });
-      } else {
-        setDl((d) => (d ? { ...d, pct: Math.min(d.pct + 1, 99) } : { id: p.id, pct: 5 }));
-      }
-    });
-    return () => { un.then((f) => f()); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -108,25 +91,12 @@ export default function SettingsTab({
   const doTtsPreview = async () => {
     setTtsTesting(true);
     try {
-      const msg = await api.ttsPreview(cfg.tts);
+      const msg = await api.ttsPreview(cfg);
       onToast(msg);
     } catch (e) {
       onToast(`试听失败：${e}`);
     } finally {
       setTtsTesting(false);
-    }
-  };
-
-  const doPiperVoice = async (id: string) => {
-    setDl({ id, pct: 0 });
-    try {
-      await api.downloadPiperVoice(id);
-      setPiper(await api.piperStatus());
-      onToast("音色下载完成，可试听");
-    } catch (e) {
-      onToast(`下载失败：${e}`);
-    } finally {
-      setDl(null);
     }
   };
 
@@ -154,9 +124,6 @@ export default function SettingsTab({
       setSaving(false);
     }
   };
-
-  const voice = piperVoices.find((v) => v.id === cfg.tts.piperVoice);
-  const voiceInstalled = piper?.installedVoices.includes(cfg.tts.piperVoice) ?? false;
 
   return (
     <div className="settings">
@@ -232,10 +199,9 @@ export default function SettingsTab({
                 <p className="hint">模型：{testResult.model} · {testResult.durationMs} ms · {testResult.source === "screen" ? "屏幕" : "摄像头"}</p>
               </div>
             )}
-            <p className="hint">兼容任意 OpenAI 风格服务。本地 Ollama 需自行启动并拉取模型，把地址填成 http://localhost:11434/v1（应用不负责下载/管理模型）。</p>
           </>
         ) : (
-          <p className="hint">演示模式：无需模型即可体验完整监控流程（检测结果由程序模拟，约每 8 轮出现一次开小差）。</p>
+          <p className="hint">演示模式：无需模型即可体验完整监控流程（检测结果由程序模拟）。</p>
         )}
       </section>
 
@@ -264,59 +230,32 @@ export default function SettingsTab({
         <h2>语音（TTS）</h2>
         <div className="row">
           <label>引擎</label>
-          <select value={cfg.tts.engine} onChange={(e) => setTts({ engine: e.target.value as "system" | "piper" })}>
+          <select value={cfg.tts.engine} onChange={(e) => setTts({ engine: e.target.value as "ai" | "system" })}>
+            <option value="ai">AI 生成语音（OpenAI 兼容 /audio/speech）</option>
             <option value="system">系统语音（SAPI / say / spd-say）</option>
-            <option value="piper">Piper（本地开源，三平台一致）</option>
           </select>
           <button className="btn" disabled={ttsTesting} onClick={doTtsPreview}>{ttsTesting ? "试听中…" : "试听"}</button>
         </div>
-        {cfg.tts.engine === "system" ? (
-          <div className="row">
-            <label>系统音色</label>
-            <input value={cfg.tts.systemVoice} placeholder="留空用默认语音" onChange={(e) => setTts({ systemVoice: e.target.value })} />
-          </div>
-        ) : (
+        {cfg.tts.engine === "ai" ? (
           <>
             <div className="row">
-              <label>音色</label>
-              <select value={cfg.tts.piperVoice} onChange={(e) => setTts({ piperVoice: e.target.value })}>
-                {piperVoices.map((v) => (
-                  <option key={v.id} value={v.id}>{v.label}（{v.id}）</option>
-                ))}
-              </select>
+              <label>TTS 模型</label>
+              <input value={cfg.tts.model} placeholder="如 tts-1 / gpt-4o-mini-tts / kokoro" onChange={(e) => setTts({ model: e.target.value })} />
             </div>
             <div className="row">
-              {voice && (
-                <button className="btn" disabled={voiceInstalled || !!dl} onClick={() => doPiperVoice(voice.id)}>
-                  {voiceInstalled ? "✓ 已下载" : dl ? "下载中…" : "下载此音色"}
-                </button>
-              )}
-              <span className="hint-inline">
-                {piper?.engineInstalled ? "Piper 引擎已就绪" : "Piper 引擎未安装，" }
-                {!piper?.engineInstalled && (
-                  <a className="link-btn" onClick={() => api.openPiperDownload().then(() => onToast("已打开下载页"))}>
-                    打开 Piper 下载页
-                  </a>
-                )}
-              </span>
-              <button className="btn" onClick={() => api.openTtsDir().then(() => onToast("已打开 TTS 文件夹，把 piper.exe 放到这里"))}>
-                打开 TTS 文件夹
-              </button>
+              <label>音色</label>
+              <input value={cfg.tts.voice} placeholder="如 alloy / nova / zf_094" onChange={(e) => setTts({ voice: e.target.value })} />
             </div>
-            {dl && (
-              <div className="dl-row">
-                <div className="progress"><div className="progress-bar" style={{ width: `${dl.pct}%` }} /></div>
-                <span className="hint-inline">{dl.pct}%</span>
-              </div>
-            )}
-            {ttsPaths && (
-              <p className="hint">
-                音色/引擎实际查找目录：<code>{ttsPaths.ttsDir}</code>
-                （放入 <code>{ttsPaths.ttsDir}\voices\音色id.onnx</code> 即可被识别）
-              </p>
-            )}
-            <p className="hint">Piper 是本地开源 TTS。需先把引擎放到应用数据目录的 tts/ 文件夹并下载音色，提醒音色三平台一致、支持中文。</p>
+            <p className="hint">
+              AI 语音调用「模型服务」的 <code>/audio/speech</code> 端点：服务需支持 OpenAI 兼容 TTS。
+              本地可用（如 ChatTTS/GPT-SoVITS 等提供兼容端点的服务），云端如 OpenAI 官方（tts-1）。
+            </p>
           </>
+        ) : (
+          <div className="row">
+            <label>系统音色</label>
+            <input value={cfg.tts.voice} placeholder="留空用默认语音" onChange={(e) => setTts({ voice: e.target.value })} />
+          </div>
         )}
       </section>
 

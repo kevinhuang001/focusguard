@@ -73,24 +73,24 @@ impl Default for ReminderConfig {
     }
 }
 
-/// TTS 配置：system（系统语音，三平台兜底）或 piper（本地开源，三平台一致）。
+/// TTS 配置：ai（调 OpenAI 兼容 /audio/speech，AI 合成语音）或 system（系统语音兜底）。
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TtsConfig {
-    /// system | piper
+    /// ai | system
     pub engine: String,
-    /// 系统音色名（system 引擎；空则用系统默认语音）
-    pub system_voice: String,
-    /// Piper 音色 id（piper 引擎），如 zh_CN-huayan-medium
-    pub piper_voice: String,
+    /// AI 音色名（如 alloy/nova，取决于服务）；system 时用作系统音色名（可留空）
+    pub voice: String,
+    /// AI 语音合成模型名（如 tts-1 / gpt-4o-mini-tts）
+    pub model: String,
 }
 
 impl Default for TtsConfig {
     fn default() -> Self {
         Self {
-            engine: "system".into(),
-            system_voice: String::new(),
-            piper_voice: "zh_CN-huayan-x_low".into(),
+            engine: "ai".into(),
+            voice: "alloy".into(),
+            model: "tts-1".into(),
         }
     }
 }

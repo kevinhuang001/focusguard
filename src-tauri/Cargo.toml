@@ -18,7 +18,8 @@ tauri-plugin-notification = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "time", "sync", "process"] }
-reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "stream"] }
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "stream", "blocking"] }
+rodio = { version = "0.19", features = ["symphonia-mp3"] }
 futures-util = "0.3"
 base64 = "0.22"
 image = { version = "0.25", features = ["jpeg"] }
