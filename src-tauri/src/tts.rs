@@ -21,7 +21,12 @@ fn speak_ai(_app: &AppHandle, cfg: &Config, text: &str) -> Result<(), String> {
     } else {
         cfg.tts.api_url.trim_end_matches('/').to_string()
     };
-    let url = format!("{base}/audio/speech");
+    // 兼容两种填法：http://host/v1 或 http://host/v1/audio/speech
+    let url = if base.ends_with("/audio/speech") {
+        base
+    } else {
+        format!("{base}/audio/speech")
+    };
     let body = serde_json::json!({
         "model": cfg.tts.model,
         "voice": cfg.tts.voice,
@@ -45,6 +50,11 @@ fn speak_ai(_app: &AppHandle, cfg: &Config, text: &str) -> Result<(), String> {
         let status = resp.status();
         let eb: serde_json::Value = resp.json().unwrap_or_default();
         let msg = eb["error"]["message"].as_str().unwrap_or("").trim().to_string();
+        if status == reqwest::StatusCode::NOT_FOUND {
+            return Err(format!(
+                "AI 语音服务返回 404：请确认「语音服务 URL」填的是服务地址（如 http://localhost:5005/v1，不要带 /audio/speech），且该服务已启动并支持 /audio/speech 端点。"
+            ));
+        }
         return Err(format!("AI 语音服务返回错误: HTTP {} {}", status, msg).trim_end().to_string());
     }
     let bytes = resp.bytes().map_err(|e| format!("读取音频失败: {e}"))?;
