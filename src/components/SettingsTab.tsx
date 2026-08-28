@@ -239,6 +239,10 @@ export default function SettingsTab({
         {cfg.tts.engine === "ai" ? (
           <>
             <div className="row">
+              <label>语音服务 URL</label>
+              <input value={cfg.tts.apiUrl} placeholder="留空复用「模型服务」URL" onChange={(e) => setTts({ apiUrl: e.target.value })} />
+            </div>
+            <div className="row">
               <label>TTS 模型</label>
               <input value={cfg.tts.model} placeholder="如 tts-1 / gpt-4o-mini-tts / kokoro" onChange={(e) => setTts({ model: e.target.value })} />
             </div>
@@ -247,8 +251,8 @@ export default function SettingsTab({
               <input value={cfg.tts.voice} placeholder="如 alloy / nova / zf_094" onChange={(e) => setTts({ voice: e.target.value })} />
             </div>
             <p className="hint">
-              AI 语音调用「模型服务」的 <code>/audio/speech</code> 端点：服务需支持 OpenAI 兼容 TTS。
-              本地可用（如 ChatTTS/GPT-SoVITS 等提供兼容端点的服务），云端如 OpenAI 官方（tts-1）。
+              AI 语音调用「语音服务 URL」的 <code>/audio/speech</code> 端点（服务需支持 OpenAI 兼容 TTS），
+              留空则用「模型服务」URL。本地服务（如 ChatTTS/GPT-SoVITS 的兼容端点）或云端 OpenAI 均可。
             </p>
           </>
         ) : (

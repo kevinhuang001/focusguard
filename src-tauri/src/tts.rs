@@ -15,7 +15,12 @@ pub fn speak(app: &AppHandle, cfg: &Config, text: &str) -> Result<(), String> {
 
 /// AI 合成语音：POST {base}/audio/speech -> mp3 -> rodio 直接播放（无黑框、跨平台）。
 fn speak_ai(_app: &AppHandle, cfg: &Config, text: &str) -> Result<(), String> {
-    let base = cfg.model_api.api_url.trim_end_matches('/');
+    // 语音服务 URL：优先 tts.api_url，留空则复用「模型服务」URL
+    let base = if cfg.tts.api_url.trim().is_empty() {
+        cfg.model_api.api_url.trim_end_matches('/').to_string()
+    } else {
+        cfg.tts.api_url.trim_end_matches('/').to_string()
+    };
     let url = format!("{base}/audio/speech");
     let body = serde_json::json!({
         "model": cfg.tts.model,

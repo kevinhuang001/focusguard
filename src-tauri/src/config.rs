@@ -79,9 +79,14 @@ impl Default for ReminderConfig {
 pub struct TtsConfig {
     /// ai | system
     pub engine: String,
-    /// AI 音色名（如 alloy/nova，取决于服务）；system 时用作系统音色名（可留空）
+    /// AI 语音服务 URL（OpenAI 兼容 /audio/speech；留空则复用「模型服务」URL）
+    #[serde(default)]
+    pub api_url: String,
+    /// AI 音色名（如 alloy/nova/zf_094，取决于服务）；system 时用作系统音色名（可留空）
+    #[serde(default)]
     pub voice: String,
     /// AI 语音合成模型名（如 tts-1 / gpt-4o-mini-tts）
+    #[serde(default)]
     pub model: String,
 }
 
@@ -89,6 +94,7 @@ impl Default for TtsConfig {
     fn default() -> Self {
         Self {
             engine: "ai".into(),
+            api_url: String::new(),
             voice: "alloy".into(),
             model: "tts-1".into(),
         }

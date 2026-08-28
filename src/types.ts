@@ -17,6 +17,7 @@ export interface ReminderConfig {
 
 export interface TtsConfig {
   engine: "ai" | "system";
+  apiUrl: string;
   voice: string;
   model: string;
 }
