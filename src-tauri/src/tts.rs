@@ -43,7 +43,7 @@ fn speak_ai(_app: &AppHandle, cfg: &Config, text: &str) -> Result<(), String> {
     }
     let resp = req.send().map_err(|e| {
         format!(
-            "无法连接 AI 语音服务（{base}）。若该服务不支持 TTS，请改用「系统语音」: {e}"
+            "无法连接 AI 语音服务（{url}）。若该服务不支持 TTS，请改用「系统语音」: {e}"
         )
     })?;
     if !resp.status().is_success() {
