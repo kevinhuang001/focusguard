@@ -1,4 +1,4 @@
-use crate::config::{self, Config};
+use crate::config::{self, Config, TtsConfig};
 use crate::gpu;
 use crate::model::{self, OpenAiClient};
 use crate::monitor::{self, MonitorSnapshot, MonitorState};
@@ -144,7 +144,7 @@ pub async fn get_recommendation() -> gpu::RecommendResult {
 #[tauri::command]
 pub async fn detect_once(app: AppHandle, source: String) -> Result<model::DetectionResult, String> {
     let cfg = config::load(&app);
-    monitor::detect_once_impl(&cfg, &source).await
+    monitor::detect_once_impl(&app, &cfg, &source).await
 }
 
 #[tauri::command]
@@ -152,16 +152,36 @@ pub async fn send_test_reminder(
     app: AppHandle,
     kind: String,
     voice_text: String,
-) -> Result<(), String> {
-    crate::reminder::fire(
-        app,
-        &kind,
-        &voice_text,
-        "FocusGuard 测试提醒",
-        "这是一条测试提醒：检测到开小差时会这样提醒你。",
-    )
-    .await;
-    Ok(())
+) -> Result<String, String> {
+    let cfg = config::load(&app);
+    let title = "FocusGuard 测试提醒";
+    let body = "这是一条测试提醒：检测到开小差时会这样提醒你。";
+    match kind.as_str() {
+        "system" => {
+            crate::reminder::system_notify(&app, title, body);
+            Ok("已发送系统通知".into())
+        }
+        "voice" => {
+            let a = app.clone();
+            let t = voice_text.clone();
+            let c = cfg.tts.clone();
+            tokio::task::spawn_blocking(move || crate::tts::speak(&a, &c, &t))
+                .await
+                .map_err(|e| format!("语音线程异常: {e}"))??;
+            Ok("语音已播报".into())
+        }
+        "both" => {
+            crate::reminder::system_notify(&app, title, body);
+            let a = app.clone();
+            let t = voice_text.clone();
+            let c = cfg.tts.clone();
+            tokio::task::spawn_blocking(move || crate::tts::speak(&a, &c, &t))
+                .await
+                .map_err(|e| format!("语音线程异常: {e}"))??;
+            Ok("系统通知 + 语音已触发".into())
+        }
+        _ => Ok("已忽略（未选择提醒方式）".into()),
+    }
 }
 
 #[tauri::command]
@@ -172,4 +192,49 @@ pub fn list_monitors() -> Result<Vec<String>, String> {
 #[tauri::command]
 pub fn list_cameras() -> Result<Vec<String>, String> {
     crate::capture::list_cameras()
+}
+
+/// 读取历史检测画面（返回 data URI，前端直接显示）。
+#[tauri::command]
+pub fn read_history_image(path: String) -> Result<String, String> {
+    use base64::Engine;
+    let bytes = std::fs::read(&path).map_err(|e| format!("读取历史截图失败: {e}"))?;
+    Ok(format!(
+        "data:image/jpeg;base64,{}",
+        base64::engine::general_purpose::STANDARD.encode(&bytes)
+    ))
+}
+
+// ---------- TTS ----------
+
+#[tauri::command]
+pub fn list_piper_voices() -> Vec<crate::tts::PiperVoice> {
+    crate::tts::piper_voices()
+}
+
+#[tauri::command]
+pub fn piper_status(app: AppHandle) -> crate::tts::PiperStatus {
+    crate::tts::piper_status(&app)
+}
+
+#[tauri::command]
+pub fn open_piper_download() -> Result<(), String> {
+    crate::tts::open_piper_download()
+}
+
+#[tauri::command]
+pub async fn download_piper_voice(app: AppHandle, id: String) -> Result<(), String> {
+    crate::tts::download_piper_voice(&app, &id).await
+}
+
+/// 用指定 TTS 配置试听一句示例。
+#[tauri::command]
+pub async fn tts_preview(app: AppHandle, tts: TtsConfig) -> Result<String, String> {
+    let text = "这是语音播报试听：专注，是一种力量。";
+    let a = app.clone();
+    let t = tts.clone();
+    tokio::task::spawn_blocking(move || crate::tts::speak(&a, &t, text))
+        .await
+        .map_err(|e| format!("试听线程异常: {e}"))??;
+    Ok("试听播放完成".into())
 }

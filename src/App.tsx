@@ -3,9 +3,8 @@ import { api, events } from "./api";
 import type { Config, MonitorSnapshot, RecommendResult } from "./types";
 import StatusTab from "./components/StatusTab";
 import SettingsTab from "./components/SettingsTab";
-import ModelsTab from "./components/ModelsTab";
 
-type Tab = "status" | "settings" | "models";
+type Tab = "status" | "settings";
 
 export default function App() {
   const [tab, setTab] = useState<Tab>("status");
@@ -103,11 +102,6 @@ export default function App() {
 
   const goSettings = () => setTab("settings");
 
-  const pickModel = (model: string) => {
-    setConfig((c) => (c ? { ...c, modelApi: { ...c.modelApi, model } } : c));
-    showToast(`已选择模型：${model}（记得保存设置）`);
-  };
-
   return (
     <div className="app">
       <header className="app-header">
@@ -128,12 +122,6 @@ export default function App() {
             onClick={() => setTab("settings")}
           >
             设置
-          </button>
-          <button
-            className={tab === "models" ? "tab active" : "tab"}
-            onClick={() => setTab("models")}
-          >
-            模型
           </button>
         </nav>
         <div className="header-right">
@@ -163,14 +151,6 @@ export default function App() {
             onSave={saveConfig}
             onGoStatus={() => setTab("status")}
             onToast={showToast}
-          />
-        )}
-        {tab === "models" && (
-          <ModelsTab
-            config={config}
-            onToast={showToast}
-            onPickModel={pickModel}
-            onGoSettings={goSettings}
           />
         )}
       </main>

@@ -439,6 +439,47 @@ textarea {
   flex: 1;
 }
 
+.view-btn {
+  background: none;
+  border: 1px solid var(--card-border);
+  color: var(--accent);
+  border-radius: 6px;
+  font-size: 12px;
+  padding: 2px 10px;
+  cursor: pointer;
+  margin-left: 8px;
+}
+
+.view-btn:hover {
+  border-color: var(--accent);
+}
+
+.preview-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.82);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  gap: 12px;
+  z-index: 200;
+  cursor: pointer;
+}
+
+.preview-img {
+  max-width: 86vw;
+  max-height: 82vh;
+  border-radius: 10px;
+  border: 1px solid var(--card-border);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.5);
+}
+
+.preview-close {
+  color: var(--text-dim);
+  font-size: 13px;
+}
+
 /* ---------- Settings ---------- */
 .gpu-name {
   font-size: 15px;

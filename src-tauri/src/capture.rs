@@ -45,14 +45,19 @@ pub fn capture_camera(camera_index: usize, max_width: u32) -> Result<RgbaImage, 
     Ok(downscale(img, max_width))
 }
 
-/// 编码为 JPEG 的 base64，用于发送给 Ollama 视觉模型。
+/// 编码为 JPEG，用于发送给模型（base64）。
 pub fn to_jpeg_base64(img: &RgbaImage, quality: u8) -> Result<String, String> {
+    Ok(base64::engine::general_purpose::STANDARD.encode(&jpeg_bytes(img, quality)?))
+}
+
+/// 编码为 JPEG 字节（用于保存历史截图）。
+pub fn jpeg_bytes(img: &RgbaImage, quality: u8) -> Result<Vec<u8>, String> {
     let mut buf: Vec<u8> = Vec::new();
     let mut encoder = image::codecs::jpeg::JpegEncoder::new_with_quality(&mut buf, quality);
     encoder
         .encode_image(img)
         .map_err(|e| format!("JPEG 编码失败: {e}"))?;
-    Ok(base64::engine::general_purpose::STANDARD.encode(&buf))
+    Ok(buf)
 }
 
 pub fn list_monitors() -> Result<Vec<String>, String> {

@@ -111,13 +111,17 @@ impl OpenAiClient {
         let url = format!("{}/chat/completions", self.base_url);
         let client = self.client(Duration::from_secs(240)).await?;
         let (_, json) = self.send(client.post(&url).json(&body)).await?;
-        let text = json["choices"][0]["message"]["content"]
-            .as_str()
-            .unwrap_or("")
-            .trim()
-            .to_string();
+        let content = json["choices"][0]["message"]["content"].clone();
+        let raw = extract_content_text(&content);
+        let text = raw.trim().to_string();
         if text.is_empty() {
-            return Err("模型未返回内容，请检查模型是否支持图像输入".into());
+            let finish = json["choices"][0]["finish_reason"].as_str().unwrap_or("");
+            return Err(format!(
+                "模型未返回内容（模型「{model}」，finish_reason={finish}，本帧图片约 {} KB）。\
+                 常见原因：该模型不支持图像输入、图片过大或异常、或服务返回空。\
+                 请改用支持图像的模型（如 qwen3-vl），或调小「图片最大宽度」后重试。",
+                image_b64.len() / 1024
+            ));
         }
         let (focused, reason) = parse_detection(&text);
         Ok(DetectionResult {
@@ -163,6 +167,18 @@ pub fn mock_detect(source: &str, tick: u64) -> DetectionResult {
         model: "mock".into(),
         backend: "mock".into(),
         duration_ms: 5,
+    }
+}
+
+fn extract_content_text(content: &serde_json::Value) -> String {
+    match content {
+        serde_json::Value::String(s) => s.clone(),
+        serde_json::Value::Array(arr) => arr
+            .iter()
+            .filter_map(|c| c["text"].as_str())
+            .collect::<Vec<_>>()
+            .join(""),
+        _ => String::new(),
     }
 }
 

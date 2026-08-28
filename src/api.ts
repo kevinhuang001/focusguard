@@ -7,8 +7,11 @@ import type {
   GpuInfo,
   MonitorSnapshot,
   MonitorTick,
+  PiperStatus,
+  PiperVoice,
   RecommendResult,
   ReminderEvent,
+  TtsConfig,
 } from "./types";
 
 export const api = {
@@ -23,9 +26,17 @@ export const api = {
   stopMonitoring: () => invoke<void>("stop_monitoring"),
   getMonitorState: () => invoke<MonitorSnapshot>("get_monitor_state"),
   sendTestReminder: (kind: string, voiceText: string) =>
-    invoke<void>("send_test_reminder", { kind, voiceText }),
+    invoke<string>("send_test_reminder", { kind, voiceText }),
   listMonitors: () => invoke<string[]>("list_monitors"),
   listCameras: () => invoke<string[]>("list_cameras"),
+  readHistoryImage: (path: string) =>
+    invoke<string>("read_history_image", { path }),
+  listPiperVoices: () => invoke<PiperVoice[]>("list_piper_voices"),
+  piperStatus: () => invoke<PiperStatus>("piper_status"),
+  openPiperDownload: () => invoke<void>("open_piper_download"),
+  downloadPiperVoice: (id: string) =>
+    invoke<void>("download_piper_voice", { id }),
+  ttsPreview: (tts: TtsConfig) => invoke<string>("tts_preview", { tts }),
 };
 
 export const events = {

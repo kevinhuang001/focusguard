@@ -49,8 +49,11 @@ impl Default for ModelConfig {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ReminderConfig {
-    /// none | system | voice | both
+    /// none | system | voice | both（保留；提醒默认统一走 TTS 语音，可同时发系统通知）
     pub kind: String,
+    /// 提醒内容类型 fixed | ai
+    pub content_type: String,
+    /// 固定提醒文案（content_type=fixed 时用）
     pub voice_text: String,
     /// 两次提醒之间的最小间隔（秒）
     pub cooldown_secs: u64,
@@ -62,9 +65,32 @@ impl Default for ReminderConfig {
     fn default() -> Self {
         Self {
             kind: "voice".into(),
+            content_type: "fixed".into(),
             voice_text: "注意！检测到你似乎没有在专注当前任务，请尽快回到正轨！".into(),
             cooldown_secs: 30,
-            miss_threshold: 2,
+            miss_threshold: 1,
+        }
+    }
+}
+
+/// TTS 配置：system（系统语音，三平台兜底）或 piper（本地开源，三平台一致）。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TtsConfig {
+    /// system | piper
+    pub engine: String,
+    /// 系统音色名（system 引擎；空则用系统默认语音）
+    pub system_voice: String,
+    /// Piper 音色 id（piper 引擎），如 zh_CN-huayan-medium
+    pub piper_voice: String,
+}
+
+impl Default for TtsConfig {
+    fn default() -> Self {
+        Self {
+            engine: "system".into(),
+            system_voice: String::new(),
+            piper_voice: "zh_CN-huayan-medium".into(),
         }
     }
 }
@@ -81,6 +107,7 @@ pub struct Config {
     pub interval_secs: u64,
     /// 送入模型的图片最大宽度（按比例缩放，节省显存/算力）
     pub image_max_width: u32,
+    pub tts: TtsConfig,
     pub reminder: ReminderConfig,
     /// 是否已完成首次配置（旧配置无此字段时视为未配置，进入引导流程）
     #[serde(default)]
@@ -106,6 +133,7 @@ impl Default for Config {
             demo_mode: false,
             interval_secs: 15,
             image_max_width: 640,
+            tts: TtsConfig::default(),
             reminder: ReminderConfig::default(),
             configured: false,
         }

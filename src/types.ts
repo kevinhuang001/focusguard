@@ -9,9 +9,16 @@ export type ReminderKind = "none" | "system" | "voice" | "both";
 
 export interface ReminderConfig {
   kind: ReminderKind;
+  contentType: "fixed" | "ai";
   voiceText: string;
   cooldownSecs: number;
   missThreshold: number;
+}
+
+export interface TtsConfig {
+  engine: "system" | "piper";
+  systemVoice: string;
+  piperVoice: string;
 }
 
 export interface ModelConfig {
@@ -27,8 +34,21 @@ export interface Config {
   demoMode: boolean;
   intervalSecs: number;
   imageMaxWidth: number;
+  tts: TtsConfig;
   reminder: ReminderConfig;
   configured: boolean;
+}
+
+export interface PiperVoice {
+  id: string;
+  label: string;
+  lang: string;
+  path: string;
+}
+
+export interface PiperStatus {
+  engineInstalled: boolean;
+  installedVoices: string[];
 }
 
 export interface GpuInfo {
@@ -68,6 +88,7 @@ export interface MonitorTick {
   durationMs: number;
   ts: number;
   error?: string;
+  imagePath?: string;
 }
 
 export interface MonitorSnapshot {

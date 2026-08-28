@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { api } from "../api";
 import type { Config, MonitorSnapshot, MonitorTick } from "../types";
 import { validateConfig } from "../validate";
 
@@ -62,10 +63,20 @@ export default function StatusTab({
   onGoSettings,
 }: Props) {
   const [now, setNow] = useState(Date.now());
+  const [preview, setPreview] = useState<string | null>(null);
   useEffect(() => {
     const t = window.setInterval(() => setNow(Date.now()), 1000);
     return () => window.clearInterval(t);
   }, []);
+
+  const openPreview = async (path?: string) => {
+    if (!path) return;
+    try {
+      setPreview(await api.readHistoryImage(path));
+    } catch {
+      /* 忽略：图片可能已被清理 */
+    }
+  };
 
   if (!config || !snapshot) {
     return <div className="placeholder">加载中…</div>;
@@ -162,11 +173,23 @@ export default function StatusTab({
                 <span className="h-reason">
                   {t.error ?? t.reason ?? ""}
                 </span>
+                {t.imagePath && (
+                  <button className="view-btn" onClick={() => openPreview(t.imagePath)}>
+                    查看
+                  </button>
+                )}
               </li>
             ))}
           </ul>
         )}
       </section>
+
+      {preview && (
+        <div className="preview-overlay" onClick={() => setPreview(null)}>
+          <img src={preview} alt="历史检测画面" className="preview-img" />
+          <div className="preview-close">点击任意处关闭</div>
+        </div>
+      )}
     </div>
   );
 }

@@ -5,6 +5,7 @@ mod gpu;
 mod model;
 mod monitor;
 mod reminder;
+mod tts;
 
 use monitor::MonitorState;
 use std::sync::Arc;
@@ -33,6 +34,12 @@ pub fn run() {
             commands::send_test_reminder,
             commands::list_monitors,
             commands::list_cameras,
+            commands::read_history_image,
+            commands::list_piper_voices,
+            commands::piper_status,
+            commands::open_piper_download,
+            commands::download_piper_voice,
+            commands::tts_preview,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

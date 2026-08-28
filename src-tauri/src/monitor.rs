@@ -3,10 +3,11 @@ use crate::config::Config;
 use crate::model::{self, DetectionResult};
 use crate::reminder;
 use serde::{Deserialize, Serialize};
+use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
-use tauri::{AppHandle, Emitter};
+use tauri::{AppHandle, Emitter, Manager};
 
 pub struct MonitorHandle {
     pub join: tauri::async_runtime::JoinHandle<()>,
@@ -25,6 +26,9 @@ pub struct MonitorTick {
     pub ts: u64,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
+    /// 检测时的截图/摄像头画面的本地路径（供历史查看）
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub image_path: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -94,8 +98,12 @@ pub fn stop(state: &Arc<MonitorState>) {
 }
 
 /// 单次检测（供「测试」按钮使用）。
-pub async fn detect_once_impl(cfg: &Config, source: &str) -> Result<DetectionResult, String> {
-    check_source(source, cfg, 0).await
+pub async fn detect_once_impl(
+    app: &AppHandle,
+    cfg: &Config,
+    source: &str,
+) -> Result<DetectionResult, String> {
+    Ok(check_source(app, source, cfg, 0).await?.0)
 }
 
 async fn run_loop(
@@ -128,14 +136,16 @@ async fn run_loop(
 
                 let now = now_ms();
                 let mut should_fire = false;
+                let mut last_reason = String::new();
                 {
                     let mut snap = state.snapshot.lock().unwrap();
                     let mut any_distracted = false;
                     for (source, res) in results {
                         let t = match res {
-                            Ok(det) => {
+                            Ok((det, image_path)) => {
                                 if !det.focused {
                                     any_distracted = true;
+                                    last_reason = det.reason.clone();
                                 }
                                 MonitorTick {
                                     source: source.clone(),
@@ -146,6 +156,7 @@ async fn run_loop(
                                     duration_ms: det.duration_ms,
                                     ts: now_ms(),
                                     error: None,
+                                    image_path,
                                 }
                             }
                             Err(e) => MonitorTick {
@@ -157,6 +168,7 @@ async fn run_loop(
                                 duration_ms: 0,
                                 ts: now_ms(),
                                 error: Some(e),
+                                image_path: None,
                             },
                         };
                         snap.last_ticks.push(t.clone());
@@ -186,14 +198,21 @@ async fn run_loop(
                 } // 释放锁，避免持有 MutexGuard 跨 await
 
                 if should_fire {
+                    // 提醒文案：AI 生成（基于模型对画面的判断）或固定文案
+                    let text = if cfg.reminder.content_type == "ai" && !last_reason.is_empty() {
+                        format!("检测到你在：{last_reason}，请尽快回到当前任务！")
+                    } else {
+                        cfg.reminder.voice_text.clone()
+                    };
                     reminder::fire(
                         app.clone(),
                         &cfg.reminder.kind,
-                        &cfg.reminder.voice_text,
-                            "专注监控提醒",
-                            "检测到你似乎没有在专注当前任务，请回到正轨！",
-                        )
-                        .await;
+                        &cfg.tts,
+                        &text,
+                        "专注监控提醒",
+                        "检测到你似乎没有在专注当前任务，请回到正轨！",
+                    )
+                    .await;
                 }
             }
         }
@@ -206,22 +225,24 @@ async fn run_loop(
 }
 
 async fn check_all(
-    _app: &AppHandle,
+    app: &AppHandle,
     _state: &Arc<MonitorState>,
     cfg: &Config,
     tick_no: u64,
-) -> Vec<(String, Result<DetectionResult, String>)> {
+) -> Vec<(String, Result<(DetectionResult, Option<String>), String>)> {
     let mut tasks = Vec::new();
     if cfg.screen.enabled {
         let cfg2 = cfg.clone();
+        let app2 = app.clone();
         tasks.push(tokio::task::spawn(async move {
-            ("screen".to_string(), check_source("screen", &cfg2, tick_no).await)
+            ("screen".to_string(), check_source(&app2, "screen", &cfg2, tick_no).await)
         }));
     }
     if cfg.camera.enabled {
         let cfg2 = cfg.clone();
+        let app2 = app.clone();
         tasks.push(tokio::task::spawn(async move {
-            ("camera".to_string(), check_source("camera", &cfg2, tick_no).await)
+            ("camera".to_string(), check_source(&app2, "camera", &cfg2, tick_no).await)
         }));
     }
     let mut out = Vec::new();
@@ -233,7 +254,46 @@ async fn check_all(
     out
 }
 
-async fn check_source(source: &str, cfg: &Config, tick_no: u64) -> Result<DetectionResult, String> {
+fn history_dir(app: &AppHandle) -> Result<PathBuf, String> {
+    let dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|e| e.to_string())?
+        .join("history");
+    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    Ok(dir)
+}
+
+/// 把检测画面存为历史 JPEG，返回绝对路径；并做简单容量限制。
+fn save_history_image(app: &AppHandle, source: &str, img: &image::RgbaImage, ts: u64) -> Option<String> {
+    let dir = history_dir(app).ok()?;
+    let path = dir.join(format!("{ts}_{source}.jpg"));
+    let bytes = capture::jpeg_bytes(img, 80).ok()?;
+    std::fs::write(&path, &bytes).ok()?;
+    // 简单上限：最多保留 300 张，删最旧
+    if let Ok(entries) = std::fs::read_dir(&dir) {
+        let mut files: Vec<_> = entries
+            .filter_map(|e| e.ok())
+            .filter(|e| e.file_type().map(|t| t.is_file()).unwrap_or(false))
+            .collect();
+        files.sort_by_key(|e| e.file_name());
+        while files.len() > 300 {
+            if files.is_empty() {
+                break;
+            }
+            let oldest = files.remove(0);
+            let _ = std::fs::remove_file(oldest.path());
+        }
+    }
+    Some(path.to_string_lossy().to_string())
+}
+
+async fn check_source(
+    app: &AppHandle,
+    source: &str,
+    cfg: &Config,
+    tick_no: u64,
+) -> Result<(DetectionResult, Option<String>), String> {
     let monitor_index = cfg.screen.monitor_index;
     let camera_index = cfg.camera.camera_index;
     let max_width = cfg.image_max_width;
@@ -249,10 +309,12 @@ async fn check_source(source: &str, cfg: &Config, tick_no: u64) -> Result<Detect
     .await
     .map_err(|e| format!("采集线程异常: {e}"))??;
 
+    let ts = now_ms();
+    let image_path = save_history_image(app, source, &img, ts);
     let b64 = capture::to_jpeg_base64(&img, 70)?;
 
     if cfg.demo_mode {
-        return Ok(model::mock_detect(source, tick_no));
+        return Ok((model::mock_detect(source, tick_no), image_path));
     }
 
     let prompt = if is_screen {
@@ -266,5 +328,5 @@ async fn check_source(source: &str, cfg: &Config, tick_no: u64) -> Result<Detect
     );
     let mut det = client.detect(&cfg.model_api.model, &prompt, &b64).await?;
     det.source = source.to_string();
-    Ok(det)
+    Ok((det, image_path))
 }
