@@ -66,6 +66,25 @@ pub fn piper_status(app: &AppHandle) -> PiperStatus {
     PiperStatus { engine_installed, installed_voices }
 }
 
+/// 用系统文件管理器打开 TTS 资源目录（方便手动放置 piper 引擎/音色）。
+pub fn open_tts_dir(app: &AppHandle) -> Result<(), String> {
+    let dir = tts_dir(app)?;
+    #[cfg(target_os = "windows")]
+    {
+        Command::new("explorer").arg(&dir).spawn()
+            .map_err(|e| format!("无法打开目录: {e}"))?;
+    }
+    #[cfg(target_os = "macos")]
+    {
+        Command::new("open").arg(&dir).spawn().map_err(|e| format!("无法打开目录: {e}"))?;
+    }
+    #[cfg(target_os = "linux")]
+    {
+        Command::new("xdg-open").arg(&dir).spawn().map_err(|e| format!("无法打开目录: {e}"))?;
+    }
+    Ok(())
+}
+
 /// Linux 下载 Piper 引擎（解压仍需用户完成）。
 pub fn open_piper_download() -> Result<(), String> {
     let url = if cfg!(target_os = "linux") {

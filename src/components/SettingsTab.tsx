@@ -297,6 +297,9 @@ export default function SettingsTab({
                   </a>
                 )}
               </span>
+              <button className="btn" onClick={() => api.openTtsDir().then(() => onToast("已打开 TTS 文件夹，把 piper.exe 放到这里"))}>
+                打开 TTS 文件夹
+              </button>
             </div>
             {dl && (
               <div className="dl-row">

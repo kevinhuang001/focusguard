@@ -38,6 +38,7 @@ pub fn run() {
             commands::list_piper_voices,
             commands::piper_status,
             commands::open_piper_download,
+            commands::open_tts_dir,
             commands::download_piper_voice,
             commands::tts_preview,
         ])
