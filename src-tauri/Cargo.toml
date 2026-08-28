@@ -1,0 +1,50 @@
+[package]
+name = "focus-guard"
+version = "0.1.0"
+description = "跨平台专注任务监控桌面应用（原型）：屏幕/摄像头采集 + 本地小模型判断 + 提醒"
+authors = ["FocusGuard"]
+edition = "2021"
+
+[lib]
+name = "focus_guard_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+tauri-plugin-notification = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "time", "sync", "process"] }
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+base64 = "0.22"
+image = { version = "0.25", features = ["jpeg"] }
+# 注：xcap 0.5+ 在 Linux 上强制依赖 pipewire/libspa，旧版 Ubuntu(22.04) 的 spa 头文件无法编译，
+# 故锁定 0.4（X11/XShm 采集，API 与 0.9 一致）。
+xcap = "0.4"
+tts = "0.26"
+
+[dependencies.nokhwa]
+version = "0.10"
+default-features = false
+features = ["decoding"]
+
+[target.'cfg(target_os = "linux")'.dependencies.nokhwa]
+version = "0.10"
+default-features = false
+features = ["decoding", "input-v4l"]
+
+[target.'cfg(target_os = "macos")'.dependencies.nokhwa]
+version = "0.10"
+default-features = false
+features = ["decoding", "input-avfoundation"]
+
+[target.'cfg(target_os = "windows")'.dependencies.nokhwa]
+version = "0.10"
+default-features = false
+features = ["decoding", "input-msmf"]
+
+[profile.release]
+strip = true
