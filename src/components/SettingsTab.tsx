@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { api } from "../api";
+import { api, events } from "../api";
 import { REMINDER_LABELS } from "../presets";
 import type {
   Config,
@@ -39,6 +39,7 @@ export default function SettingsTab({
   const [piperVoices, setPiperVoices] = useState<PiperVoice[]>([]);
   const [piper, setPiper] = useState<PiperStatus | null>(null);
   const [ttsTesting, setTtsTesting] = useState(false);
+  const [dl, setDl] = useState<{ id: string; pct: number } | null>(null);
 
   useEffect(() => {
     if (config) setCfg(structuredClone(config));
@@ -49,6 +50,14 @@ export default function SettingsTab({
     api.listCameras().then(setCameras).catch(() => onToast("无法枚举摄像头"));
     api.listPiperVoices().then(setPiperVoices).catch(() => {});
     api.piperStatus().then(setPiper).catch(() => {});
+    const un = events.onDownloadProgress((p) => {
+      if (p.total && p.total > 0) {
+        setDl({ id: p.id, pct: Math.round((p.bytes / p.total) * 100) });
+      } else {
+        setDl((d) => (d ? { ...d, pct: Math.min(d.pct + 1, 99) } : { id: p.id, pct: 5 }));
+      }
+    });
+    return () => { un.then((f) => f()); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -107,13 +116,15 @@ export default function SettingsTab({
   };
 
   const doPiperVoice = async (id: string) => {
-    onToast("正在下载音色…");
+    setDl({ id, pct: 0 });
     try {
       await api.downloadPiperVoice(id);
       setPiper(await api.piperStatus());
       onToast("音色下载完成，可试听");
     } catch (e) {
       onToast(`下载失败：${e}`);
+    } finally {
+      setDl(null);
     }
   };
 
@@ -274,8 +285,8 @@ export default function SettingsTab({
             </div>
             <div className="row">
               {voice && (
-                <button className="btn" disabled={voiceInstalled} onClick={() => doPiperVoice(voice.id)}>
-                  {voiceInstalled ? "✓ 已下载" : "下载此音色"}
+                <button className="btn" disabled={voiceInstalled || !!dl} onClick={() => doPiperVoice(voice.id)}>
+                  {voiceInstalled ? "✓ 已下载" : dl ? "下载中…" : "下载此音色"}
                 </button>
               )}
               <span className="hint-inline">
@@ -287,6 +298,12 @@ export default function SettingsTab({
                 )}
               </span>
             </div>
+            {dl && (
+              <div className="dl-row">
+                <div className="progress"><div className="progress-bar" style={{ width: `${dl.pct}%` }} /></div>
+                <span className="hint-inline">{dl.pct}%</span>
+              </div>
+            )}
             <p className="hint">Piper 是本地开源 TTS。需先把引擎放到应用数据目录的 tts/ 文件夹并下载音色，提醒音色三平台一致、支持中文。</p>
           </>
         )}

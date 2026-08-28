@@ -17,11 +17,11 @@ pub struct PiperVoice {
 
 pub fn piper_voices() -> Vec<PiperVoice> {
     vec![
-        PiperVoice { id: "zh_CN-huayan-medium".into(), label: "中文 · 华妍（女）".into(), lang: "zh_CN".into(), path: "zh/zh_CN/huayan/medium/zh_CN-huayan-medium.onnx".into() },
-        PiperVoice { id: "zh_CN-huayan-x_low".into(), label: "中文 · 华妍（女，轻量）".into(), lang: "zh_CN".into(), path: "zh/zh_CN/huayan/x_low/zh_CN-huayan-x_low.onnx".into() },
-        PiperVoice { id: "zh_CN-xiaobei-medium".into(), label: "中文 · 晓北（女）".into(), lang: "zh_CN".into(), path: "zh/zh_CN/xiaobei/medium/zh_CN-xiaobei-medium.onnx".into() },
-        PiperVoice { id: "zh_CN-xiaoxiao-medium".into(), label: "中文 · 晓晓（女）".into(), lang: "zh_CN".into(), path: "zh/zh_CN/xiaoxiao/medium/zh_CN-xiaoxiao-medium.onnx".into() },
-        PiperVoice { id: "en_US-lessac-medium".into(), label: "英文 · Lessac".into(), lang: "en_US".into(), path: "en/en_US/lessac/medium/en_US-lessac-medium.onnx".into() },
+        PiperVoice { id: "zh_CN-huayan-medium".into(), label: "中文 · 华妍（女）".into(), lang: "zh_CN".into(), path: "zh/zh_CN/huayan/medium/zh_CN-huayan-medium".into() },
+        PiperVoice { id: "zh_CN-huayan-x_low".into(), label: "中文 · 华妍（女，轻量）".into(), lang: "zh_CN".into(), path: "zh/zh_CN/huayan/x_low/zh_CN-huayan-x_low".into() },
+        PiperVoice { id: "zh_CN-xiaobei-medium".into(), label: "中文 · 晓北（女）".into(), lang: "zh_CN".into(), path: "zh/zh_CN/xiaobei/medium/zh_CN-xiaobei-medium".into() },
+        PiperVoice { id: "zh_CN-xiaoxiao-medium".into(), label: "中文 · 晓晓（女）".into(), lang: "zh_CN".into(), path: "zh/zh_CN/xiaoxiao/medium/zh_CN-xiaoxiao-medium".into() },
+        PiperVoice { id: "en_US-lessac-medium".into(), label: "英文 · Lessac".into(), lang: "en_US".into(), path: "en/en_US/lessac/medium/en_US-lessac-medium".into() },
     ]
 }
 
@@ -92,28 +92,61 @@ pub fn open_piper_download() -> Result<(), String> {
 }
 
 /// 下载指定 Piper 音色（onnx + json）到本地。
+/// 优先从 ModelScope（国内），失败回退 HuggingFace；下载时发送进度事件。
 pub async fn download_piper_voice(app: &AppHandle, id: &str) -> Result<(), String> {
+    use futures_util::StreamExt;
+    use std::io::Write;
+    use tauri::Emitter;
+
     let voice = piper_voices()
         .into_iter()
         .find(|v| v.id == id)
         .ok_or_else(|| format!("未知音色: {id}"))?;
-    let base = "https://huggingface.co/rhasspy/piper-voices/resolve/main/";
     let dir = voices_dir(app)?;
     let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(120))
+        .timeout(std::time::Duration::from_secs(300))
         .build()
         .map_err(|e| e.to_string())?;
 
+    // 双源：ModelScope（国内优先）→ HuggingFace 回退
+    let sources = [
+        format!("https://modelscope.cn/models/rhasspy/piper-voices/resolve/master/{}", voice.path),
+        format!("https://huggingface.co/rhasspy/piper-voices/resolve/main/{}", voice.path),
+    ];
+
     for ext in ["onnx", "onnx.json"] {
-        let url = format!("{base}{}.{}", voice.path, ext);
-        let resp = client.get(&url).send().await
-            .map_err(|e| format!("下载音色失败（{ext}）: {e}"))?;
-        if !resp.status().is_success() {
-            return Err(format!("下载音色失败（{ext}）: HTTP {}", resp.status()));
-        }
-        let bytes = resp.bytes().await.map_err(|e| format!("读取音色失败: {e}"))?;
         let dest = dir.join(format!("{}.{}", voice.id, ext));
-        std::fs::write(&dest, &bytes).map_err(|e| format!("写入音色失败: {e}"))?;
+        let mut ok = false;
+        let mut last_err = String::new();
+        for base in &sources {
+            let url = format!("{base}.{ext}");
+            let resp = match client.get(&url).send().await {
+                Ok(r) => r,
+                Err(e) => { last_err = e.to_string(); continue; }
+            };
+            if !resp.status().is_success() {
+                last_err = format!("HTTP {}", resp.status());
+                continue;
+            }
+            let total = resp.content_length();
+            let mut stream = resp.bytes_stream();
+            let mut f = std::fs::File::create(&dest).map_err(|e| format!("写入失败: {e}"))?;
+            let mut written: u64 = 0;
+            while let Some(chunk) = stream.next().await {
+                let c = chunk.map_err(|e| format!("下载中断: {e}"))?;
+                f.write_all(&c).map_err(|e| format!("写入失败: {e}"))?;
+                written += c.len() as u64;
+                let _ = app.emit(
+                    "piper://download-progress",
+                    serde_json::json!({ "id": voice.id, "bytes": written, "total": total }),
+                );
+            }
+            ok = true;
+            break;
+        }
+        if !ok {
+            return Err(format!("下载音色（{ext}）失败：{last_err}。请检查网络后重试。"));
+        }
     }
     Ok(())
 }
@@ -134,22 +167,36 @@ fn speak_system(voice: &str, text: &str) -> Result<(), String> {
         use std::os::windows::process::CommandExt;
         const CREATE_NO_WINDOW: u32 = 0x0800_0000;
         let safe = text.replace('\'', "''");
-        let mut script = format!(
-            "Add-Type -AssemblyName System.Speech; $s=New-Object System.Speech.Synthesis.SpeechSynthesizer;"
+        let voice_sel = if voice.is_empty() {
+            String::new()
+        } else {
+            format!("try {{ $s.SelectVoice('{}') }} catch {{}};", voice.replace('\'', "''"))
+        };
+        // 显式设置默认音频输出 + 优先选中文语音，避免中文被英文音色读出或无声
+        let script = format!(
+            "Add-Type -AssemblyName System.Speech;\
+             $s = New-Object System.Speech.Synthesis.SpeechSynthesizer;\
+             try {{ $s.SetOutputToDefaultAudioDevice() }} catch {{}};\
+             try {{ $v = $s.GetInstalledVoices() | ForEach-Object {{ $_.VoiceInfo }} | Where-Object {{ $_.Culture.Name -like 'zh*' }} | Select-Object -First 1; if ($v) {{ $s.SelectVoice($v.Name) }} else {{ Write-Output 'NO_ZH_VOICE' }} }} catch {{}};\
+             {voice_sel}\
+             $s.Speak('{safe}');\
+             $s.Dispose()"
         );
-        if !voice.is_empty() {
-            script.push_str(&format!("try {{ $s.SelectVoice('{}') }} catch {{}};", voice.replace('\'', "''")));
-        }
-        script.push_str(&format!("$s.Speak('{safe}')"));
         let utf16: Vec<u8> = script.encode_utf16().flat_map(|u| u.to_le_bytes()).collect();
         let b64 = base64::engine::general_purpose::STANDARD.encode(&utf16);
-        let status = Command::new("powershell")
+        let out = Command::new("powershell")
             .args(["-NoProfile", "-EncodedCommand", &b64])
             .creation_flags(CREATE_NO_WINDOW)
-            .status()
+            .output()
             .map_err(|e| format!("启动系统语音失败: {e}"))?;
-        if status.success() { Ok(()) } else {
-            Err(format!("系统语音播报失败（退出码 {:?}）。请确认系统已安装语音包（中文语音需中文语言包）。", status.code()))
+        if out.status.success() {
+            Ok(())
+        } else {
+            let err = String::from_utf8_lossy(&out.stderr).trim().to_string();
+            Err(format!(
+                "系统语音播报失败（退出码 {:?}）：{err}。请确认系统已安装语音包（中文语音需中文语言包）且音频设备正常。",
+                out.status.code()
+            ))
         }
     }
     #[cfg(target_os = "macos")]

@@ -90,7 +90,7 @@ impl OpenAiClient {
         let started = Instant::now();
         let prompt = format!(
             "你是「专注状态检测助手」。观察用户当前画面，判断用户是否在专注地做以下任务：\n{}\n\n\
-             请只输出一个 JSON 对象（不要输出任何其他文字），格式：{{\"focused\": true 或 false, \"reason\": \"不超过30字的中文原因\"}}。\n\
+             请直接判断，并只输出一个 JSON 对象（不要思考、不要输出任何推理过程或解释），格式：{{\"focused\": true 或 false, \"reason\": \"不超过30字的中文原因\"}}。\n\
              判断标准：画面内容与任务一致 = focused=true；画面明显与任务无关（刷手机、看视频、聊天、离开等）= focused=false；无法确定时倾向于 focused=true。",
             user_prompt
         );
@@ -104,9 +104,11 @@ impl OpenAiClient {
                     { "type": "image_url", "image_url": { "url": image_data_url } }
                 ]
             }],
-            "max_tokens": 256,
+            "max_tokens": 1024,
             "temperature": 0.2,
-            "stream": false
+            "stream": false,
+            // 关闭思考（Qwen3-VL 等 thinking 模型），避免长推理把配额耗尽
+            "think": false
         });
         let url = format!("{}/chat/completions", self.base_url);
         let client = self.client(Duration::from_secs(240)).await?;
@@ -118,8 +120,8 @@ impl OpenAiClient {
             let finish = json["choices"][0]["finish_reason"].as_str().unwrap_or("");
             return Err(format!(
                 "模型未返回内容（模型「{model}」，finish_reason={finish}，本帧图片约 {} KB）。\
-                 常见原因：该模型不支持图像输入、图片过大或异常、或服务返回空。\
-                 请改用支持图像的模型（如 qwen3-vl），或调小「图片最大宽度」后重试。",
+                 若 finish_reason=length：多为模型在“思考”而输出被截断，请改用非思考版模型（带 -instruct，如 qwen3-vl:8b-instruct）。\
+                 若模型不支持图像，请换成支持图像的视觉模型（如 qwen3-vl），或调小「图片最大宽度」后重试。",
                 image_b64.len() / 1024
             ));
         }

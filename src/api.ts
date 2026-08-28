@@ -46,4 +46,11 @@ export const events = {
     listen<{ running: boolean }>("monitor://state", (e) => cb(e.payload)),
   onReminder: (cb: (r: ReminderEvent) => void) =>
     listen<ReminderEvent>("monitor://reminder", (e) => cb(e.payload)),
+  onDownloadProgress: (
+    cb: (p: { id: string; bytes: number; total: number | null }) => void
+  ) =>
+    listen<{ id: string; bytes: number; total: number | null }>(
+      "piper://download-progress",
+      (e) => cb(e.payload)
+    ),
 };
