@@ -228,6 +228,11 @@ pub fn open_tts_dir(app: AppHandle) -> Result<(), String> {
 }
 
 #[tauri::command]
+pub fn get_tts_paths(app: AppHandle) -> crate::tts::TtsPaths {
+    crate::tts::tts_paths(&app)
+}
+
+#[tauri::command]
 pub async fn download_piper_voice(app: AppHandle, id: String) -> Result<(), String> {
     crate::tts::download_piper_voice(&app, &id).await
 }

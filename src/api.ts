@@ -35,6 +35,7 @@ export const api = {
   piperStatus: () => invoke<PiperStatus>("piper_status"),
   openPiperDownload: () => invoke<void>("open_piper_download"),
   openTtsDir: () => invoke<void>("open_tts_dir"),
+  getTtsPaths: () => invoke<{ ttsDir: string; voicesDir: string }>("get_tts_paths"),
   downloadPiperVoice: (id: string) =>
     invoke<void>("download_piper_voice", { id }),
   ttsPreview: (tts: TtsConfig) => invoke<string>("tts_preview", { tts }),

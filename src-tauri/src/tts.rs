@@ -53,28 +53,47 @@ fn piper_exe(app: &AppHandle) -> Result<std::path::PathBuf, String> {
     Ok(tts_dir(app)?.join(name))
 }
 
-/// 查找音色文件：优先用户下载（应用数据 tts/voices 或 tts 根目录），其次内置资源。
+/// 递归查找音色文件：优先用户数据目录（任意子目录），其次内置资源。
 fn voice_file(app: &AppHandle, id: &str, ext: &str) -> Option<std::path::PathBuf> {
-    let named = |d: std::path::PathBuf| d.join(format!("{id}.{ext}"));
-    if let Ok(d) = voices_dir(app) {
-        let p = named(d);
-        if p.exists() {
-            return Some(p);
-        }
-    }
+    let target = format!("{id}.{ext}");
     if let Ok(d) = tts_dir(app) {
-        let p = named(d);
-        if p.exists() {
+        if let Some(p) = find_in_dir(&d, &target) {
             return Some(p);
         }
     }
     if let Ok(dir) = app.path().resource_dir() {
-        let p = named(dir.join("piper").join("voices"));
+        let p = dir
+            .join("piper")
+            .join("voices")
+            .join(format!("{id}.{ext}"));
         if p.exists() {
             return Some(p);
         }
     }
     None
+}
+
+/// 在目录树中递归查找匹配文件名的文件（限制深度避免深陷）。
+fn find_in_dir(dir: &std::path::Path, target: &str) -> Option<std::path::PathBuf> {
+    fn walk(dir: &std::path::Path, target: &str, depth: u32) -> Option<std::path::PathBuf> {
+        if depth > 6 {
+            return None;
+        }
+        if let Ok(rd) = std::fs::read_dir(dir) {
+            for e in rd.flatten() {
+                let path = e.path();
+                if path.is_dir() {
+                    if let Some(p) = walk(&path, target, depth + 1) {
+                        return Some(p);
+                    }
+                } else if path.file_name().and_then(|n| n.to_str()) == Some(target) {
+                    return Some(path);
+                }
+            }
+        }
+        None
+    }
+    walk(dir, target, 0)
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -94,6 +113,21 @@ pub fn piper_status(app: &AppHandle) -> PiperStatus {
         .map(|v| v.id.clone())
         .collect();
     PiperStatus { engine_installed, installed_voices }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TtsPaths {
+    pub tts_dir: String,
+    pub voices_dir: String,
+}
+
+/// 返回应用实际查找的 TTS 目录（便于用户放置引擎/音色）。
+pub fn tts_paths(app: &AppHandle) -> TtsPaths {
+    TtsPaths {
+        tts_dir: tts_dir(app).map(|d| d.to_string_lossy().to_string()).unwrap_or_default(),
+        voices_dir: voices_dir(app).map(|d| d.to_string_lossy().to_string()).unwrap_or_default(),
+    }
 }
 
 /// 用系统文件管理器打开 TTS 资源目录（方便手动放置 piper 引擎/音色）。

@@ -40,6 +40,7 @@ export default function SettingsTab({
   const [piper, setPiper] = useState<PiperStatus | null>(null);
   const [ttsTesting, setTtsTesting] = useState(false);
   const [dl, setDl] = useState<{ id: string; pct: number } | null>(null);
+  const [ttsPaths, setTtsPaths] = useState<{ ttsDir: string; voicesDir: string } | null>(null);
 
   useEffect(() => {
     if (config) setCfg(structuredClone(config));
@@ -50,6 +51,7 @@ export default function SettingsTab({
     api.listCameras().then(setCameras).catch(() => onToast("无法枚举摄像头"));
     api.listPiperVoices().then(setPiperVoices).catch(() => {});
     api.piperStatus().then(setPiper).catch(() => {});
+    api.getTtsPaths().then(setTtsPaths).catch(() => {});
     const un = events.onDownloadProgress((p) => {
       if (p.total && p.total > 0) {
         setDl({ id: p.id, pct: Math.round((p.bytes / p.total) * 100) });
@@ -306,6 +308,12 @@ export default function SettingsTab({
                 <div className="progress"><div className="progress-bar" style={{ width: `${dl.pct}%` }} /></div>
                 <span className="hint-inline">{dl.pct}%</span>
               </div>
+            )}
+            {ttsPaths && (
+              <p className="hint">
+                音色/引擎实际查找目录：<code>{ttsPaths.ttsDir}</code>
+                （放入 <code>{ttsPaths.ttsDir}\voices\音色id.onnx</code> 即可被识别）
+              </p>
             )}
             <p className="hint">Piper 是本地开源 TTS。需先把引擎放到应用数据目录的 tts/ 文件夹并下载音色，提醒音色三平台一致、支持中文。</p>
           </>
