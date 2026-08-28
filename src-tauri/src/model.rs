@@ -67,8 +67,17 @@ impl OllamaClient {
             .send()
             .await
             .map_err(|e| format!("无法连接 Ollama（{}），请确认 Ollama 已启动: {e}", self.url))?;
-        if !resp.status().is_success() {
-            return Err(format!("Ollama 返回错误: HTTP {}", resp.status()));
+        let status = resp.status();
+        if !status.is_success() {
+            let err_body: serde_json::Value = resp.json().await.unwrap_or_default();
+            let ollama_err = err_body["error"].as_str().unwrap_or("").trim().to_string();
+            if status == reqwest::StatusCode::NOT_FOUND && ollama_err.contains("not found") {
+                return Err(format!(
+                    "模型「{}」不存在（HTTP 404）：{}。请先在「模型」页拉取该模型，或执行: ollama pull {}",
+                    model, ollama_err, model
+                ));
+            }
+            return Err(format!("Ollama 返回错误: HTTP {status} {ollama_err}").trim_end().to_string());
         }
         let json: serde_json::Value = resp
             .json()
