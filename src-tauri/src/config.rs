@@ -82,12 +82,15 @@ pub struct TtsConfig {
     /// AI 语音服务 URL（OpenAI 兼容 /audio/speech；留空则复用「模型服务」URL）
     #[serde(default)]
     pub api_url: String,
-    /// AI 音色名（如 alloy/nova/zf_094，取决于服务）；system 时用作系统音色名（可留空）
+    /// AI 音色名（如 alloy/nova/zf_094，取决于服务）
     #[serde(default)]
     pub voice: String,
-    /// AI 语音合成模型名（如 tts-1 / gpt-4o-mini-tts）
+    /// AI 语音合成模型名（如 tts-1 / gpt-4o-mini-tts / orpheus）
     #[serde(default)]
     pub model: String,
+    /// 系统音色名（system 引擎；可留空用默认语音）
+    #[serde(default)]
+    pub system_voice: String,
 }
 
 impl Default for TtsConfig {
@@ -97,6 +100,7 @@ impl Default for TtsConfig {
             api_url: String::new(),
             voice: "alloy".into(),
             model: "tts-1".into(),
+            system_voice: String::new(),
         }
     }
 }

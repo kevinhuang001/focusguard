@@ -9,7 +9,7 @@ pub fn speak(app: &AppHandle, cfg: &Config, text: &str) -> Result<(), String> {
     if cfg.tts.engine == "ai" {
         speak_ai(app, cfg, text)
     } else {
-        speak_system(&cfg.tts.voice, text)
+        speak_system(&cfg.tts.system_voice, text)
     }
 }
 

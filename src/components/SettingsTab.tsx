@@ -236,31 +236,29 @@ export default function SettingsTab({
           </select>
           <button className="btn" disabled={ttsTesting} onClick={doTtsPreview}>{ttsTesting ? "试听中…" : "试听"}</button>
         </div>
-        {cfg.tts.engine === "ai" ? (
-          <>
-            <div className="row">
-              <label>语音服务 URL</label>
-              <input value={cfg.tts.apiUrl} placeholder="留空复用「模型服务」URL" onChange={(e) => setTts({ apiUrl: e.target.value })} />
-            </div>
-            <div className="row">
-              <label>TTS 模型</label>
-              <input value={cfg.tts.model} placeholder="如 tts-1 / gpt-4o-mini-tts / kokoro" onChange={(e) => setTts({ model: e.target.value })} />
-            </div>
-            <div className="row">
-              <label>音色</label>
-              <input value={cfg.tts.voice} placeholder="如 alloy / nova / zf_094" onChange={(e) => setTts({ voice: e.target.value })} />
-            </div>
-            <p className="hint">
-              AI 语音调用「语音服务 URL」的 <code>/audio/speech</code> 端点（服务需支持 OpenAI 兼容 TTS），
-              留空则用「模型服务」URL。本地服务（如 ChatTTS/GPT-SoVITS 的兼容端点）或云端 OpenAI 均可。
-            </p>
-          </>
-        ) : (
+        {/* AI 语音配置：始终显示（切到 AI 引擎即可用） */}
+        <div className="row">
+          <label>语音服务 URL</label>
+          <input value={cfg.tts.apiUrl} placeholder="留空复用「模型服务」URL" onChange={(e) => setTts({ apiUrl: e.target.value })} />
+        </div>
+        <div className="row">
+          <label>TTS 模型</label>
+          <input value={cfg.tts.model} placeholder="如 tts-1 / gpt-4o-mini-tts / orpheus" onChange={(e) => setTts({ model: e.target.value })} />
+        </div>
+        <div className="row">
+          <label>音色</label>
+          <input value={cfg.tts.voice} placeholder="如 alloy / nova / tara" onChange={(e) => setTts({ voice: e.target.value })} />
+        </div>
+        {cfg.tts.engine === "system" && (
           <div className="row">
             <label>系统音色</label>
-            <input value={cfg.tts.voice} placeholder="留空用默认语音" onChange={(e) => setTts({ voice: e.target.value })} />
+            <input value={cfg.tts.systemVoice} placeholder="留空用默认语音" onChange={(e) => setTts({ systemVoice: e.target.value })} />
           </div>
         )}
+        <p className="hint">
+          AI 语音调用「语音服务 URL」的 <code>/audio/speech</code>（服务需支持 OpenAI 兼容 TTS，如本地
+          Orpheus-FastAPI / ChatTTS 服务，或云端 OpenAI）。留空 URL 则复用「模型服务」URL。
+        </p>
       </section>
 
       <section className="card">

@@ -20,6 +20,7 @@ export interface TtsConfig {
   apiUrl: string;
   voice: string;
   model: string;
+  systemVoice: string;
 }
 
 export interface ModelConfig {
